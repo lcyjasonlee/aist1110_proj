@@ -6,14 +6,46 @@ from itertools import product
 
 MAP_HEIGHT = 15
 MAP_WIDTH = 9
+GRID_SIZE = 32
+
+key_to_action = {
+    'w': 0, # up
+    's': 1, # down
+    'a': 2, # left
+    'd': 3, # right
+    'q': 4, # up-left
+    'e': 5, # up-right
+    'z': 6, # down-left
+    'c': 7, # down-right
+    'space': 8, # jump
+    'l': 9, # freezer
+    ';': 10, # redbull
+    'k': 11, # destroy
+}
+
+key_to_action2 = {
+    (pygame.K_UP, pygame.K_a, pygame.K_KP8): 0, # up
+    (pygame.K_DOWN, pygame.K_s, pygame.K_KP6): 1, # down
+    (pygame.K_LEFT, pygame.K_a, pygame.K_KP4) : 2, # left
+    (pygame.K_RIGHT, pygame.K_d, pygame.K_KP6): 3, # right
+    (pygame.K_q, ): 4, # up-left
+    (pygame.K_e, ): 5, # up-right
+    (pygame.K_z, ): 6, # down-left
+    (pygame.K_c, ): 7, # down-right
+    (pygame.K_SPACE, pygame.K_j): 8, # jump
+    (pygame.K_l, ): 9, # freezer
+    (pygame.K_SEMICOLON, ): 10, # redbull
+    (pygame.K_k, ): 11, # destroy
+}
+
 
 
 # make coordinates objects for better readability,
 # handles coordinate operations too
 class Coordinate:
     x_max, y_max = MAP_WIDTH-1, MAP_HEIGHT-1
-    
-    
+
+
     # must use kwarg, for readability in object creation
     def __init__(self, *, x: int=None, y: int=None) -> None:
         if x is None or y is None:
@@ -21,12 +53,12 @@ class Coordinate:
         else:
             self.x = x
             self.y = y
-        
-        
+
+
     # c: Coordinate object
     def __add__(self, c):
         newx, newy = self.x + c.x, self.y + c.y
-        
+
         if newx > self.x_max or newx < 0 or newy > self.y_max or newy < 0:
             raise ValueError("Coordinate Out of Bound")
         else:
@@ -35,18 +67,18 @@ class Coordinate:
 
     def __sub__(self, c):
         return self + (-1 * c)
-            
-            
+
+
     def __mul__(self, op: int|float):
         EPSILON = 0.01
         newx, newy = self.x * op, self.y * op
         newx_int, newy_int = round(newx), round(newy)
-        
+
         if abs(newx_int - newx) > EPSILON or abs(newy_int - newy) > EPSILON:
             raise ValueError("Non-Integer Coordinate")
         else:
             return Coordinate(x=newx_int, y=newy_int)
-        
+
 
     def __truediv__(self, op: int|float):
         return self * (1 / op)
@@ -61,44 +93,22 @@ class Coordinate:
 
     # index=True: tuple is in order of matrix indices
     # i.e. (a, b) meant to be interpreted as matrix[a][b]
+    @property
     def coord(self, *, index=True):
-        return (self.y, self.x) if index else (self.x, self.x)
+        return (self.y, self.x) if index else (self.x, self.y)
 
-
-key_to_action = {
-    'w': 0,
-    's': 1,
-    'a': 2,
-    'd': 3,
-    'space': 4, # jump
-    'k': 5, # freezer
-    ';': 6 # redbull
-}
-
-key_to_action2 = {
-    (pygame.K_UP, pygame.K_a, pygame.K_KP8): 0,
-    (pygame.K_DOWN, pygame.K_s, pygame.K_KP6): 1,
-    (pygame.K_LEFT, pygame.K_a, pygame.K_KP4) : 2,
-    (pygame.K_RIGHT, pygame.K_d, pygame.K_KP6): 3,
-    (pygame.K_SPACE, ): 4, # jump
-    (pygame.K_k, ): 5, # freezer
-    (pygame.K_SEMICOLON): 6 # redbull
-}
-
-# delta [column, row]
-# action_to_direction = {
-#     0: [0, -1],
-#     1: [0, 1],
-#     2: [-1, 0],
-#     3: [1, 0]
-# }
 
 action_to_direction = {
     0: Coordinate(x=0, y=-1),
     1: Coordinate(x=0, y=1),
     2: Coordinate(x=-1, y=0),
-    3: Coordinate(x=1, y=0)
+    3: Coordinate(x=1, y=0),
+    4: Coordinate(x=-1, y=-1),
+    5: Coordinate(x=1, y=-1),
+    6: Coordinate(x=-1, y=1),
+    7: Coordinate(x=1, y=1),
 }
+
 
 # handles map creation, path validation
 # and updating player+monster positions
@@ -117,17 +127,54 @@ class Map:
 
         # we may hardcode the first few rows
         # and dynamically generate the rest
-        self.map = [[0 for i in range(MAP_WIDTH)] for j in range(MAP_HEIGHT)]
+        self.map = [[0 for i in range(MAP_WIDTH)] for j in range(MAP_HEIGHT)] # actual map
 
         # initial platforms at center
         self.init_platform_size = 5
-        for j in range(len(self.map)//2 - self.init_platform_size//2, len(self.map)//2 + self.init_platform_size//2 + 1):
-            for i in range(len(self.map[0])//2 - self.init_platform_size//2, len(self.map[0])//2 + self.init_platform_size//2  + 1):
+        for j in range(MAP_HEIGHT//2 - self.init_platform_size//2, MAP_HEIGHT//2 + self.init_platform_size//2 + 1):
+            for i in range(MAP_WIDTH//2 - self.init_platform_size//2, MAP_WIDTH//2 + self.init_platform_size//2  + 1):
                 self.map[j][i] = 1
 
-        # cooldown of player's freezer
-        #self.freezer_cooldown = 0
+        self.grids = self.map[:] # observable area
+        self.grid_centre = 7 # centre row
 
+
+    def shift(self, shift: int) -> None:
+        # upward = +(1), downward = -(1)
+        if shift == 0:
+            return
+
+        if shift > 0:
+            n = -(self.grid_centre - MAP_HEIGHT//2 - shift) # number of new rows to be generated
+            if n > 0:
+                new_row = self.gen_platform(n)
+                self.map = new_row + self.map
+            else:
+                self.grid_centre -= shift # if not, shift current row up by (shift)
+            self.grids = self.map[self.grid_centre - MAP_HEIGHT//2:self.grid_centre + MAP_HEIGHT//2 + 1]
+            print("Shifted upward")
+            print(n, self.grid_centre)
+            print(self.grids)
+
+        else:
+            bottom = self.grid_centre + MAP_HEIGHT//2
+            n = bottom - shift - len(self.map) - 1
+            if n > 0:
+                new_row = self.gen_platform(n)
+                self.map = self.map + new_row
+            else:
+                self.grid_centre -= shift
+            self.grids = self.map[self.grid_centre - MAP_HEIGHT//2:self.grid_centre + MAP_HEIGHT//2 + 1]
+            print("Shifted Downward")
+            print(n, self.grid_centre)
+
+
+    def update_map(self):
+        self.map[self.grid_centre - MAP_HEIGHT//2: self.grid_centre + MAP_HEIGHT//2 + 1] = self.grids
+
+    @staticmethod
+    def gen_platform(n: int):
+        return [[1 for i in range(MAP_WIDTH)] for j in range(n)]
 
     # return 2d array representing the state:
     # 1st row is for player+monster stats,
@@ -182,15 +229,21 @@ class Window:
     font = pygame.font.get_fonts()
 
     def __init__(self) -> None:
-        self.win_size = (271, 541) # resolution pending
+        self.win_size = (MAP_WIDTH * GRID_SIZE + 1, (MAP_HEIGHT+3) * GRID_SIZE + 1) # resolution pending
         self.win = pygame.display.set_mode(self.win_size)
-        self.grid_size = 30
-        self.canvas = pygame.Surface(self.win_size)
+
+        self.grid_size = GRID_SIZE
+        self.lava_image = pygame.image.load("lava.png").convert()
+        self.platform_image = pygame.image.load("platform.png").convert()
+        self.platform_lip_image = pygame.image.load("platform_lip.png").convert()
+        self.platform_lip_image.set_colorkey((255, 255, 255))
+
+        self.surface = pygame.Surface(self.win_size)
         self.all_sprites = pygame.sprite.Group()
 
+        pygame.init()
         self.clock = pygame.time.Clock()
 
-        pygame.init()
         pygame.display.init()
         pygame.display.set_caption("The Floor is Lava")
 
@@ -201,92 +254,71 @@ class Window:
 
         # TODO: rendering code
 
-        self.canvas.fill("darkorange2") # background lava
+        self.surface.fill("darkorange2") # background colour
 
-        for i in range(len(grids)+1): # draw horizontal line
-            pygame.draw.line(self.canvas, "azure3", (0, (i+3)*self.grid_size), (len(grids[0])*self.grid_size, (i+3)*self.grid_size))
-
-        for i in range(len(grids[0])+1): # draw vertical line
-            pygame.draw.line(self.canvas, "azure3", (i*self.grid_size, 3*self.grid_size), (i*self.grid_size, (len(grids)+3)*self.grid_size))
-
-        # draw platforms
+        # draw grids of lava / platform
         for i in range(len(grids)):
             for j in range(len(grids[0])):
-                if grids[i][j] == 1:
-                    pygame.draw.rect(self.canvas, "antiquewhite1", pygame.Rect((j*self.grid_size + 1, (i+3)*self.grid_size + 1), (self.grid_size - 1, self.grid_size - 1)))
+                topleft = j*self.grid_size, (i+3)*self.grid_size
 
-        self.all_sprites.draw(self.canvas)
+                if grids[i][j] == 0: # lava
+                    self.surface.blit(self.lava_image, self.lava_image.get_rect(topleft=topleft))
+                    if i-1 >= 0 and grids[i-1][j] == 1: # platform above
+                        self.surface.blit(self.platform_lip_image, self.lava_image.get_rect(topleft=topleft))
+                else: # platform
+                    self.surface.blit(self.platform_image, self.lava_image.get_rect(topleft=topleft))
 
-        self.win.blit(self.canvas, self.canvas.get_rect())
+        self.all_sprites.draw(self.surface)
+
+        self.win.blit(self.surface, self.surface.get_rect())
         pygame.display.flip()
 
 
 class Action():
-    def __init__(self, max_freeze=3, freezer_cooldown=7):
-        
+    def __init__(self, max_freeze=3, freezer_cooldown=7, redbull_cooldown=0):
+
         # jump is meant to be slightly better than walk with drawbacks,
         # so jump range need not be variable
         self.max_freeze = max_freeze
 
-        # relative positions of platforms freezable (diamond shape)
-        # self.can_freeze = \
-        #                 [[i, j] for i in range(-self.max_freeze+1, self.max_freeze) for j in range(-self.max_freeze+1, self.max_freeze)
-        #                 if (i, j) != (0, 0) and (abs(i), abs(j)) != (self.max_freeze-1, self.max_freeze-1)] + \
-        #                 [[0, self.max_freeze], [0, -self.max_freeze], [self.max_freeze, 0], [-self.max_freeze, 0]]
-
-        
         _iter1= range(-max_freeze, max_freeze+1)
         _iter2 = range(-max_freeze, max_freeze+1)
-        
+
         # manhattan distanceaaa
         self.can_freeze = [
-            Coordinate(x=i, y=j) 
+            Coordinate(x=i, y=j)
             for i, j in product(_iter1, _iter2)
-            if abs(i)+abs(j) <= max_freeze 
+            if abs(i)+abs(j) <= max_freeze
             and not (i == 0 and j == 0)
             ]
 
         self.freezer_cooldown = freezer_cooldown
         self.until_freezer = freezer_cooldown
 
-    # move the location in a direction
-    # depreciated
-    @staticmethod
-    def _move(loc: list[int], dir: list[int], max_x: int = 9, max_y: int = 15) -> list[int]:
-        loc = [i+j for i, j in zip(loc, dir)]
+        self.redbull_cooldown = redbull_cooldown
+        self.until_redbull = redbull_cooldown
 
-        if loc[0] < 0:
-            loc[0] = 0
-        if loc[0] >= max_x:
-            loc[0] = max_x-1
-        if loc[1] < 0:
-            loc[1] = 0
-        if loc[1] >= max_y:
-            loc[1] = max_y - 1
 
-        return loc
-
-    # move to a direction
+    # move 1 block up/down/left/right
     # loc is passed by reference
-    def walk(self, loc: Coordinate, dir: Coordinate) -> list[int]:
-        return loc + dir
+    @staticmethod
+    def walk(loc: Coordinate, dir: Coordinate) -> tuple[Coordinate, int]: # coord, dy
+        return loc + dir, -dir.y if abs(dir.y) == 1 else 0
 
-
-    # move 2 blocks to a direction
-    # can jump 2 pl atform to up/down/left/right, not diagonal
-    def jump(self, loc: Coordinate, dir: Coordinate) -> list[int]:
-        return loc + (dir * 2)
+    # can jump 2 platforms to up/down/left/right, but not diagonal
+    @staticmethod
+    def jump(loc: Coordinate, dir: Coordinate) -> tuple[Coordinate, int]: # coord, dy
+        return loc + (dir*2), -dir.y*2 if abs(dir.y) == 1 else 0
 
 
     @property
-    def _has_freeze(self) -> bool:
+    def _has_freezer(self) -> bool:
         return self.until_freezer == 0
 
-
     # freeze platforms
-    def freezer(self, pos: Coordinate, grids: list[list[int]]) -> None:
-        if not self._has_freeze:
-            return
+    def freezer(self, pos: Coordinate, grids: list[list[int]]) -> bool: # none | reward
+        #if not self._has_freezer:
+        #    return False # if cooldown not over, return negative reward (-1)
 
         for freeze_coord in self.can_freeze:
             try:
@@ -296,6 +328,30 @@ class Action():
                 pass
 
         self.until_freezer = self.freezer_cooldown # reset cooldown
+
+        return True
+
+
+    @property
+    def _has_redbull(self) -> bool:
+        return self.redbull_cooldown == 0
+
+    def redbull(self, pos: Coordinate, grids: list[list[int]]) -> tuple[Coordinate, int]: # coord, dy
+        #if not self._has_redbull:
+        #    return
+
+        x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
+        while grids[y][x] == 0 or (x, y) == (pos.x, pos.y): # lava | current pos
+            x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
+
+        return Coordinate(x=x, y=y), pos.y-y
+
+
+    @staticmethod
+    def destroy_grid(loc: Coordinate, dir: Coordinate, grids: list[list[int]]) -> None:
+        loc += dir
+        if grids[loc.y][loc.x] == 1:
+            grids[loc.y][loc.x] = 0
 
 
     @staticmethod
@@ -308,31 +364,75 @@ class Player(pygame.sprite.Sprite, Action):
         pygame.sprite.Sprite.__init__(self)
         Action.__init__(self)
 
-        # rows = 15; cols = 9; grid_size = 30
-        self.image = pygame.Surface([30//2, 30//2]) # change to an image later
+        self.image = pygame.Surface([GRID_SIZE//2, GRID_SIZE//2]) # change to an image later
         self.image.fill("red")
-        self.rect = self.image.get_rect(center=((9//2 + 0.5) * 30 + 0.5, (15//2 + 0.5 + 3) * 30 + 0.5))
+        self.rect = self.image.get_rect(center=((MAP_WIDTH//2 + 0.5) * GRID_SIZE + 0.5, (MAP_HEIGHT//2 + 0.5 + 3) * GRID_SIZE + 0.5))
 
         self.location = Coordinate(x=MAP_WIDTH//2, y=MAP_HEIGHT//2) # centre of map, (x, y)
+        self.reward = 0
+
+
+    def walk(self, dir: Coordinate, map: Map) -> None:
+        self.location, dy = super().walk(self.location, dir)
+        self.reward += dy
+
+        self.rect.move_ip(dir.x * GRID_SIZE, dir.y * GRID_SIZE)
+        #map.shift(dy)
+
+        #print("Walk to", self.location.coord)
+
+
+    def jump(self, dir: Coordinate, map: Map) -> None:
+        if abs(dir.x) == 1 and abs(dir.y) == 1: # diagonal jump
+            return
+
+        self.location, dy = super().jump(self.location, dir)
+        self.reward += dy
+
+        self.rect.move_ip(dir.x * GRID_SIZE * 2, dir.y * GRID_SIZE * 2)
+        # map.shift(dy)
+
+        #print("Jump to", self.location.coord)
+
+
+    def freezer(self, grids: list[list[int]]) -> None | list[list[int]]:
+        if not super().freezer(self.location, grids):
+            self.reward -= 1
+
+    def redbull(self, grids: list[list[int]]) -> None:
+        self.location, dy = super().redbull(self.location, grids)
+        self.reward += dy
+
+        self.rect.center = ((self.location.x + 0.5) * GRID_SIZE + 0.5, (self.location.y + 0.5 + 3) * GRID_SIZE + 0.5)
+
+        #print("Redbull to", self.location.coord)
+
+    def destroy_grid(self, dir: Coordinate, grids: list[list[int]]) -> None:
+        return super().destroy_grid(self.location, dir, grids)
+
+    def is_alive(self, grids: list[list[int]]) -> bool:
+        return super().is_alive(self.location, grids)
+
+
+class Monster(pygame.sprite.Sprite, Action):
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        Action.__init__(self)
+
+        self.image = None # change to an image later
+        self.rect = self.image.get_rect(center=None)
+
+        self.location = None # centre of map, (x, y)
 
 
     def walk(self, dir: Coordinate) -> None:
         self.location = super().walk(self.location, dir)
-        self.rect.move_ip(dir.x * 30, dir.y * 30)
+        self.rect.move_ip(dir.x * GRID_SIZE, dir.y * GRID_SIZE)
 
 
     def jump(self, dir: Coordinate) -> None:
-        self.location = super().jump(self.location, dir * 2)
-        self.rect.move_ip(dir.x * 30 * 2, dir.y * 30 * 2)
-
-
-    def freezer(self, pos: Coordinate, grids: list[list[int]]) -> None | list[list[int]]:
-        return super().freezer(pos, grids)
-
-
-class Monster(pygame.sprite.Sprite, Action):
-    pass
-
+        self.location = super().jump(self.location, dir)
+        self.rect.move_ip(dir.x * GRID_SIZE * 2, dir.y * GRID_SIZE * 2)
 
 
 class MainEnv(gym.Env):
@@ -410,44 +510,65 @@ class MainEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    grids = Map()
+    map = Map()
     win = Window()
     win.__init__()
 
     player = Player()
     win.all_sprites.add(player)
 
+    is_jump = False
+    is_destroy = False
+
     running = True
-    jump = False
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 running = False
 
             if event.type == pygame.KEYDOWN:
-                key = pygame.key.name(event.key)
-                if key not in key_to_action:
+                try:
+                    key = key_to_action[pygame.key.name(event.key)]
+                    if key == 8:
+                        is_jump = True
+                        is_destroy = False
+
+                    elif key == 9:
+                        player.freezer(map.grids)
+                        is_jump = False
+                        is_destroy = False
+
+                    elif key == 10:
+                        player.redbull(map.grids)
+                        is_jump = False
+                        is_destroy = False
+
+                    elif key == 11:
+                        is_jump = False
+                        is_destroy = True
+
+                    else:
+                        dir = action_to_direction[key]
+                        if is_jump:
+                            player.jump(dir, map)
+                            is_jump = False
+                        elif is_destroy:
+                            player.destroy_grid(dir, map.grids)
+                            is_destroy = False
+                        elif not is_jump and not is_destroy:
+                            player.walk(dir, map)
+
+                    #print(player.reward)
+
+                except KeyError:
                     continue
 
-                key = key_to_action[key]
-
-                if key == 4:
-                    jump = True
-
-                if key == 5:
-                    player.freezer(player.location, grids.map)
-
-                elif key in {0, 1, 2, 3}:
-                    if jump:
-                        player.jump(action_to_direction[key])
-                        jump = False
-                    else:
-                        player.walk(action_to_direction[key])
-
-        if not player.is_alive(player.location, grids.map):
+        if not player.is_alive(map.grids):
             player.kill()
+            player.reward -= 10
             running = False
 
-        win.draw(grids.map)
+        win.draw(map.grids)
+        #map.update_map()
 
     pygame.quit()
