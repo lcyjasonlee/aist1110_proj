@@ -1,6 +1,7 @@
 import pygame
 import gym
 import numpy as np
+from itertools import product
 
 key_to_action = {
     'w': 0,
@@ -22,6 +23,7 @@ key_to_action2 = {
     (pygame.K_SEMICOLON): 6 # redbull
 }
 
+# delta [column, row]
 action_to_direction = {
     0: [0, -1],
     1: [0, 1],
@@ -151,15 +153,26 @@ class Window:
 
 
 class Action():
-    def __init__(self, max_jump=2, max_freeze=3, freezer_cooldown=30):
-        self.max_jump = max_jump # diamond shape from player
+    def __init__(self, max_jump=2, max_freeze=3, freezer_cooldown=7):
+        self.max_jump = max_jump # can jump 1 platform to up/down/left/right, not diagonal
         self.max_freeze = max_freeze
 
-        # relative positions of platforms freezable (3*3 diamond shape)
-        self.can_freeze = \
-                        [[i, j] for i in range(-self.max_freeze+1, self.max_freeze) for j in range(-self.max_freeze+1, self.max_freeze)
-                        if (i, j) != (0, 0) and (abs(i), abs(j)) != (self.max_freeze-1, self.max_freeze-1)] + \
-                        [[0, self.max_freeze], [0, -self.max_freeze], [self.max_freeze, 0], [-self.max_freeze, 0]]
+        # relative positions of platforms freezable (diamond shape)
+        # self.can_freeze = \
+        #                 [[i, j] for i in range(-self.max_freeze+1, self.max_freeze) for j in range(-self.max_freeze+1, self.max_freeze)
+        #                 if (i, j) != (0, 0) and (abs(i), abs(j)) != (self.max_freeze-1, self.max_freeze-1)] + \
+        #                 [[0, self.max_freeze], [0, -self.max_freeze], [self.max_freeze, 0], [-self.max_freeze, 0]]
+
+        
+        _iter1= range(-max_freeze, max_freeze+1)
+        _iter2 = range(-max_freeze, max_freeze+1)
+        
+        # manhattan distance
+        self.can_freeze = [
+            (i, j) for i, j in product(_iter1, _iter2)
+            if abs(i)+abs(j) <= max_freeze
+            ]
+        self.can_freeze.remove((0, 0))
 
         self.freezer_cooldown = freezer_cooldown
         self.until_freezer = freezer_cooldown
@@ -198,8 +211,9 @@ class Action():
             return
         print("Halo")
 
-        for dir in self.can_freeze:
-            x, y = [i+j for i, j in zip(pos, dir)]
+        for freeze in self.can_freeze:
+            # x, y = [i+j for i, j in zip(pos, freeze)]
+            x, y = pos[0] + freeze[0], pos[1] + freeze[1]
             if y in range(0, 15) and x in range(0, 9) and grids[y][x] == 0:
                 grids[y][x] = 1
 
@@ -270,7 +284,7 @@ class MainEnv(gym.Env):
         self.player = Player()
         self.monster = None
 
-        observation = self.map.map
+        observation = self.map.state()  # state is more than the map itself
         info = dict()   # no extra info
 
         if self.render_mode == "human":
