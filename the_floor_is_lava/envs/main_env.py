@@ -3,6 +3,68 @@ import gym
 import numpy as np
 from itertools import product
 
+
+MAP_HEIGHT = 15
+MAP_WIDTH = 9
+
+
+# make coordinates objects for better readability,
+# handles coordinate operations too
+class Coordinate:
+    x_max, y_max = MAP_WIDTH-1, MAP_HEIGHT-1
+    
+    
+    # must use kwarg, for readability in object creation
+    def __init__(self, *, x: int=None, y: int=None) -> None:
+        if x is None or y is None:
+            raise ValueError("x, y Coordinate Required")
+        else:
+            self.x = x
+            self.y = y
+        
+        
+    # c: Coordinate object
+    def __add__(self, c):
+        newx, newy = self.x + c.x, self.y + c.y
+        
+        if newx > self.x_max or newx < 0 or newy > self.y_max or newy < 0:
+            raise ValueError("Coordinate Out of Bound")
+        else:
+            return Coordinate(x=newx, y=newy)
+
+
+    def __sub__(self, c):
+        return self + (-1 * c)
+            
+            
+    def __mul__(self, op: int|float):
+        EPSILON = 0.01
+        newx, newy = self.x * op, self.y * op
+        newx_int, newy_int = round(newx), round(newy)
+        
+        if abs(newx_int - newx) > EPSILON or abs(newy_int - newy) > EPSILON:
+            raise ValueError("Non-Integer Coordinate")
+        else:
+            return Coordinate(x=newx_int, y=newy_int)
+        
+
+    def __truediv__(self, op: int|float):
+        return self * (1 / op)
+
+
+    def __floordiv__(self, op: int):
+        return Coordinate(
+            x=int(self.x // op),
+            y=int(self.y // op)
+            )
+
+
+    # index=True: tuple is in order of matrix indices
+    # i.e. (a, b) meant to be interpreted as matrix[a][b]
+    def coord(self, *, index=True):
+        return (self.y, self.x) if index else (self.x, self.x)
+
+
 key_to_action = {
     'w': 0,
     's': 1,
@@ -24,11 +86,18 @@ key_to_action2 = {
 }
 
 # delta [column, row]
+# action_to_direction = {
+#     0: [0, -1],
+#     1: [0, 1],
+#     2: [-1, 0],
+#     3: [1, 0]
+# }
+
 action_to_direction = {
-    0: [0, -1],
-    1: [0, 1],
-    2: [-1, 0],
-    3: [1, 0]
+    0: Coordinate(x=0, y=-1),
+    1: Coordinate(x=0, y=1),
+    2: Coordinate(x=-1, y=0),
+    3: Coordinate(x=1, y=0)
 }
 
 # handles map creation, path validation
@@ -48,7 +117,7 @@ class Map:
 
         # we may hardcode the first few rows
         # and dynamically generate the rest
-        self.map = [[0 for i in range(9)] for j in range(15)]
+        self.map = [[0 for i in range(MAP_WIDTH)] for j in range(MAP_HEIGHT)]
 
         # initial platforms at center
         self.init_platform_size = 5
@@ -153,8 +222,10 @@ class Window:
 
 
 class Action():
-    def __init__(self, max_jump=2, max_freeze=3, freezer_cooldown=7):
-        self.max_jump = max_jump # can jump 1 platform to up/down/left/right, not diagonal
+    def __init__(self, max_freeze=3, freezer_cooldown=7):
+        
+        # jump is meant to be slightly better than walk with drawbacks,
+        # so jump range need not be variable
         self.max_freeze = max_freeze
 
         # relative positions of platforms freezable (diamond shape)
@@ -167,17 +238,19 @@ class Action():
         _iter1= range(-max_freeze, max_freeze+1)
         _iter2 = range(-max_freeze, max_freeze+1)
         
-        # manhattan distance
+        # manhattan distanceaaa
         self.can_freeze = [
-            (i, j) for i, j in product(_iter1, _iter2)
-            if abs(i)+abs(j) <= max_freeze
+            Coordinate(x=i, y=j) 
+            for i, j in product(_iter1, _iter2)
+            if abs(i)+abs(j) <= max_freeze 
+            and not (i == 0 and j == 0)
             ]
-        self.can_freeze.remove((0, 0))
 
         self.freezer_cooldown = freezer_cooldown
         self.until_freezer = freezer_cooldown
 
     # move the location in a direction
+    # depreciated
     @staticmethod
     def _move(loc: list[int], dir: list[int], max_x: int = 9, max_y: int = 15) -> list[int]:
         loc = [i+j for i, j in zip(loc, dir)]
@@ -194,35 +267,40 @@ class Action():
         return loc
 
     # move to a direction
-    def walk(self, loc: list[int], dir: list[int]) -> list[int]:
-        return self._move(loc, dir)
+    # loc is passed by reference
+    def walk(self, loc: Coordinate, dir: Coordinate) -> list[int]:
+        return loc + dir
+
 
     # move 2 blocks to a direction
-    def jump(self, loc: list[int], dir: list[int]) -> list[int]:
-        return self._move(loc, map(lambda x: x*self.max_jump, dir))
+    # can jump 2 pl atform to up/down/left/right, not diagonal
+    def jump(self, loc: Coordinate, dir: Coordinate) -> list[int]:
+        return loc + (dir * 2)
+
 
     @property
     def _has_freeze(self) -> bool:
         return self.until_freezer == 0
 
+
     # freeze platforms
-    def freezer(self, pos: list[int], grids: list[list[int]]) -> None:
+    def freezer(self, pos: Coordinate, grids: list[list[int]]) -> None:
         if not self._has_freeze:
             return
-        print("Halo")
 
-        for freeze in self.can_freeze:
-            # x, y = [i+j for i, j in zip(pos, freeze)]
-            x, y = pos[0] + freeze[0], pos[1] + freeze[1]
-            if y in range(0, 15) and x in range(0, 9) and grids[y][x] == 0:
-                grids[y][x] = 1
+        for freeze_coord in self.can_freeze:
+            try:
+                coord = pos + freeze_coord
+                grids[coord.y][coord.x] = 1
+            except ValueError:
+                pass
 
         self.until_freezer = self.freezer_cooldown # reset cooldown
 
 
     @staticmethod
-    def is_alive(pos: list[int], grids: list[list[int]]) -> bool:
-        return grids[pos[1]][pos[0]] == 1 # on platform
+    def is_alive(pos: Coordinate, grids: list[list[int]]) -> bool:
+        return grids[pos.y][pos.x] == 1 # on platform
 
 
 class Player(pygame.sprite.Sprite, Action):
@@ -235,18 +313,20 @@ class Player(pygame.sprite.Sprite, Action):
         self.image.fill("red")
         self.rect = self.image.get_rect(center=((9//2 + 0.5) * 30 + 0.5, (15//2 + 0.5 + 3) * 30 + 0.5))
 
-        self.location = [9//2, 15//2] # centre of map, (x, y)
+        self.location = Coordinate(x=MAP_WIDTH//2, y=MAP_HEIGHT//2) # centre of map, (x, y)
 
 
-    def walk(self, dir: list[int]) -> None:
+    def walk(self, dir: Coordinate) -> None:
         self.location = super().walk(self.location, dir)
-        self.rect.move_ip(*map(lambda x: x*30, dir))
+        self.rect.move_ip(dir.x * 30, dir.y * 30)
 
-    def jump(self, dir: list[int]) -> None:
-        self.location = super().walk(self.location, list(map(lambda x: x*2, dir)))
-        self.rect.move_ip(*map(lambda x: x*30*2, dir))
 
-    def freezer(self, pos: list[int], grids: list[list[int]]) -> None | list[list[int]]:
+    def jump(self, dir: Coordinate) -> None:
+        self.location = super().jump(self.location, dir * 2)
+        self.rect.move_ip(dir.x * 30 * 2, dir.y * 30 * 2)
+
+
+    def freezer(self, pos: Coordinate, grids: list[list[int]]) -> None | list[list[int]]:
         return super().freezer(pos, grids)
 
 
