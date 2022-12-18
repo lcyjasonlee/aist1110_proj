@@ -180,8 +180,23 @@ class Entity:
             map.grids[target.y][target.x] = 0
             return Status(True, 0)
 
+    @property
     def is_alive(self, map: Map) -> bool:
         return map.grids[self.location.y][self.location.x] == 1 # on platform
+    
+    
+    # have valid path = have ways to advance to the next row
+    # including walking sideways 
+    
+    # return if valid path exist,
+    # and x coordinate of a reachable platform on the next row
+    
+    # look for forward walk/jump first,
+    def have_valid_path(self, map: Map) -> Status:
+       pass
+    
+       
+       
 
 
 class Player(Entity):
@@ -226,19 +241,18 @@ class Player(Entity):
         return self.redbull_cooldown == 0
 
     # freeze platforms
-    def freezer(self, map: Map) -> Status:
+    def freezer(self, m: Map) -> Status:
         #if not self.has_freezer:
         #    return Status(False, 0)
 
         count = 0
         for freeze_coord in self.can_freeze:
-            try:
-                coord = self.location + freeze_coord
-                if map.grids[coord.y][coord.x] == 0:
-                    map.grids[coord.y][coord.x] = 1
+            coord = self.location + freeze_coord
+            if not Map.out_of_bound(coord): # only freeze what's possible
+                if m.grids[coord.y][coord.x] == 0:
+                    m.grids[coord.y][coord.x] = 1
                     count += 1
-            except IndexError:
-                pass    # only freeze what's possible
+                    
 
         self.until_freezer = self.freezer_cooldown # reset cooldown
 
@@ -246,24 +260,31 @@ class Player(Entity):
         return Status(bool(count), 0)
 
 
-    def redbull(self, map: Map) -> Status:
+    def redbull(self, m: Map) -> Status:
         #if not self.has_redbull:
         #   return Status(False, 0)
 
         # TODO: better way to select new platform
         x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
-        while map.grids[y][x] == 0 or (x, y) == (self.location.x, self.location.y): # lava | current pos
+        while m.grids[y][x] == 0 or (x, y) == (self.location.x, self.location.y): # lava | current pos
             x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
 
-        map.shift(y - self.location.y)
+        m.shift(y - self.location.y)
         self.location = Coordinate(x=x, y=y)
         return Status(True, y - self.location.y)
 
 
-    # a player may walk, jump, use freezer, destroy platforms
+    # a player may walk, jump, use freezer,
     # freezer has cooldown
-    def valid_action(self) -> list:
-       pass
+    # def valid_walk(self, map: Map) -> set:
+    #    result = set()
+       
+    #    for action, c in enumerate(action_to_direction):
+    #         target = self.location + c
+    #         if Map.out_of_bound(target):
+    #             if map.map[target.y][target.x] == 1:
+    #                 result.add(action)
+    
 
 
 class Monster(Entity):
@@ -288,6 +309,7 @@ class Playground:
     # 16-19: jump (up down left right)
     # 20: freezer, 21: redbull
 
+
     def __init__(self) -> None:
         self.map = Map()
         self.player = Player(Coordinate(x=MAP_WIDTH//2, y=MAP_HEIGHT//2))
@@ -309,6 +331,8 @@ class Playground:
                             }
         self.is_jump = False
         self.is_destroy = False
+        
+        self.score = 0
 
 
     def key_to_action(self, key: pygame.key) -> None:
@@ -355,20 +379,36 @@ class Playground:
         print("Player at:", player.location.coord(index=False))
 
 
-    def play(self, action: int) -> int:
-        # match case can't match range yetw
+    def play(self, action: int) -> Status:
+        # match case can't match range yet
         if action in range(0, 7+1):
-            self.player.walk(action_to_direction[action], self.map)
+            s = self.player.walk(action_to_direction[action], self.map)
         elif action in range(8, 15+1):
-            self.player.destroy(action_to_direction[action-8], self.map)
+            s = self.player.destroy(action_to_direction[action-8], self.map)
         elif action in range(16, 19+1):
-            self.player.jump(action_to_direction[action-16], self.map)
+            s = self.player.jump(action_to_direction[action-16], self.map)
         elif action == 20:
-            self.player.freezer(self.map)
+            s = self.player.freezer(self.map)
         elif action == 21:
-            self.player.redbull(self.map)
+            s = self.player.redbull(self.map)
         else:
             raise ValueError("Unknown Action")
+
+
+        if not player.is_alive:
+            self.score -= 10
+            return Status(False, -10)
+        
+        # TODO: ask monster to play after player
+        # monster may kill player
+        
+        if not player.is_alive:
+            self.score -= 10
+            return Status(False, -10)
+        
+        self.score += s.score
+        return s
+        
 
 
     # return 2d array representing the state:
@@ -378,8 +418,15 @@ class Playground:
     # this time we may use ndarray,
     # as observations are read-only
 
-    # used for rendering and providing states for RL algo
-    def state(self) -> np.ndarray:
+    # used for rendering
+    def state(self):
+        return (
+            *player.location.coord(index=False),
+            # TODO: think of useful fields
+        )
+    
+    # return 1d vector state specifically for RL algo
+    def state_rl(self) -> list:
         pass
 
 
@@ -391,11 +438,13 @@ class Window:
 
     font = pygame.font.get_fonts()
 
-    def __init__(self, playground: Playground) -> None:
+    def __init__(self, playground: Playground, fps:int) -> None:
         pygame.init()
         pygame.display.init()
         pygame.display.set_caption("The Floor is Lava")
 
+        self.fps = fps
+        
         self.grid_size = pygame.image.load("assets/lava.png").get_height()
 
         self.win_size = (MAP_WIDTH * self.grid_size + 1, (MAP_HEIGHT+2) * self.grid_size + 1) # resolution pending
@@ -417,7 +466,7 @@ class Window:
 
     # most of the rendering belongs to here
     def draw(self) -> None:
-        self.clock.tick(15)   # fps pending
+        self.clock.tick(self.fps)
 
         # TODO: rendering code
         grids = self.playground.map.get_grids(self.playground.player.location.y)[::-1] # get slices of grids
@@ -449,30 +498,32 @@ class MainEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 15}
 
 
-    def __init__(self, render_mode=None) -> None:
+    def __init__(self, render_mode=None, fps=15) -> None:
 
+        # 1D vector:
+        # player xy, monster xy, freezer&redbull cooldown,
+        # then 15 numbers representing rows
+        self.obs_space = gym.spaces.Box(shape=(21,))
+        
+        # 8 walk, 8 destroy, 4 jump, freezer, redbull
+        self.act_space = gym.spaces.Discrete(22)
 
-        # 1st row for storing player/monster info
-        # the rest for the actual map
-        self.obs_space = gym.spaces.Box(shape=(16, 9))
-        # actions (walk, jump, freezer, redbull), x (-1/-2, +1/+2), y (-1/-2, +1,+2)
-        self.act_space = gym.spaces.Discrete(shape=(22))
-
+        self.playground = Playground()
         # objects for rendering
-        self.window = Window()
+        self.fps = fps
+        self.window = Window(self.playground, self.fps)
 
 
     def reset(self, seed=None, options=None) -> tuple:
         super().reset(seed=seed)    # reset RNG
 
         # TODO: resetting code
+        self.playground = Playground()
 
-
-        observation = self.map.state()  # state is more than the map itself
+        observation = self.playground.state_rl()  # state is more than the map itself
         info = dict()   # no extra info
 
-        if self.render_mode == "human":
-            self._render_frame()
+        self._render_frame()
 
         return observation, info
 
@@ -480,16 +531,21 @@ class MainEnv(gym.Env):
     def step(self, action) -> tuple:
 
         # TODO: step code + assign variables below
-        observation = self.map.state()
-        reward = None
-        terminated = None
+        status = self.playground.play(action)
+        
+        observation = self.playground.state_rl()
+        
+        if status.success is False and status.score == 0:
+            reward = -1
+        else:
+            reward = status.score
+            
+        terminated = (status.score == -10)
         truncated = None
 
         info = dict()
 
-
-        if self.render_mode == "human":
-            self._render_frame()
+        self._render_frame()
 
         return observation, reward, terminated, truncated, info
 
@@ -501,10 +557,6 @@ class MainEnv(gym.Env):
 
     def _render_frame(self) -> None:
         if self.render_mode == "human":
-
-            if self.window is None:
-                self.window = Window()
-
             self.window.draw()
 
 
@@ -516,7 +568,7 @@ class MainEnv(gym.Env):
 if __name__ == "__main__":
 
     playground = Playground()
-    win = Window(playground=playground)
+    win = Window(playground=playground, fps=15)
 
     # TODO: change reference later
     map = playground.map
