@@ -38,8 +38,6 @@ key_to_action2 = {
     (pygame.K_k, ): 11, # destroy
 }
 
-
-
 # make coordinates objects for better readability,
 # handles coordinate operations too
 class Coordinate:
@@ -49,7 +47,7 @@ class Coordinate:
     # must use kwarg, for readability in object creation
     def __init__(self, *, x: int=None, y: int=None) -> None:
         if x is None or y is None:
-            raise ValueError("x, y Coordinate Required")
+            raise ValueError("x, y Coordinate Not Specified")
         else:
             self.x = x
             self.y = y
@@ -93,9 +91,13 @@ class Coordinate:
 
     # index=True: tuple is in order of matrix indices
     # i.e. (a, b) meant to be interpreted as matrix[a][b]
-    @property
-    def coord(self, *, index=True):
-        return (self.y, self.x) if index else (self.x, self.y)
+    def coord(self, *, index=None):
+        if index is True:
+            return (self.y, self.x)
+        elif index is False:
+            return (self.x, self.x)
+        else:
+            raise ValueError("Coordinate Order Not Specified")
 
 
 action_to_direction = {
@@ -136,7 +138,7 @@ class Map:
                 self.map[j][i] = 1
 
         self.grids = self.map[:] # observable area
-        self.grid_centre = 7 # centre row
+        self.grid_centre = MAP_HEIGHT // 2 # centre row
 
 
     def shift(self, shift: int) -> None:
@@ -229,14 +231,16 @@ class Window:
     font = pygame.font.get_fonts()
 
     def __init__(self) -> None:
-        self.win_size = (MAP_WIDTH * GRID_SIZE + 1, (MAP_HEIGHT+3) * GRID_SIZE + 1) # resolution pending
+        self.win_size = (MAP_WIDTH * GRID_SIZE + 1, (MAP_HEIGHT+2) * GRID_SIZE + 1) # resolution pending
         self.win = pygame.display.set_mode(self.win_size)
 
-        self.grid_size = GRID_SIZE
-        self.lava_image = pygame.image.load("lava.png").convert()
-        self.platform_image = pygame.image.load("platform.png").convert()
-        self.platform_lip_image = pygame.image.load("platform_lip.png").convert()
+        # self.grid_size = GRID_SIZE
+        self.lava_image = pygame.image.load("assets/lava.png").convert()
+        self.platform_image = pygame.image.load("assets/platform.png").convert()
+        self.platform_lip_image = pygame.image.load("assets/platform_lip.png").convert_alpha()
         self.platform_lip_image.set_colorkey((255, 255, 255))
+        
+        self.grid_size = self.lava_image.get_height()
 
         self.surface = pygame.Surface(self.win_size)
         self.all_sprites = pygame.sprite.Group()
@@ -257,9 +261,9 @@ class Window:
         self.surface.fill("darkorange2") # background colour
 
         # draw grids of lava / platform
-        for i in range(len(grids)):
-            for j in range(len(grids[0])):
-                topleft = j*self.grid_size, (i+3)*self.grid_size
+        for i in range(MAP_HEIGHT):
+            for j in range(MAP_WIDTH):
+                topleft = j*self.grid_size, i*self.grid_size
 
                 if grids[i][j] == 0: # lava
                     self.surface.blit(self.lava_image, self.lava_image.get_rect(topleft=topleft))
@@ -292,10 +296,10 @@ class Action():
             and not (i == 0 and j == 0)
             ]
 
-        self.freezer_cooldown = freezer_cooldown
+        self.freezer_cooldown = freezer_cooldown    # constant
         self.until_freezer = freezer_cooldown
 
-        self.redbull_cooldown = redbull_cooldown
+        self.redbull_cooldown = redbull_cooldown    # constant
         self.until_redbull = redbull_cooldown
 
 
@@ -303,12 +307,12 @@ class Action():
     # loc is passed by reference
     @staticmethod
     def walk(loc: Coordinate, dir: Coordinate) -> tuple[Coordinate, int]: # coord, dy
-        return loc + dir, -dir.y if abs(dir.y) == 1 else 0
+        return loc + dir, -dir.y
 
     # can jump 2 platforms to up/down/left/right, but not diagonal
     @staticmethod
     def jump(loc: Coordinate, dir: Coordinate) -> tuple[Coordinate, int]: # coord, dy
-        return loc + (dir*2), -dir.y*2 if abs(dir.y) == 1 else 0
+        return loc + (dir*2), -dir.y*2
 
 
     @property
@@ -325,7 +329,7 @@ class Action():
                 coord = pos + freeze_coord
                 grids[coord.y][coord.x] = 1
             except ValueError:
-                pass
+                pass    # only freeze what's possible
 
         self.until_freezer = self.freezer_cooldown # reset cooldown
 
@@ -349,9 +353,8 @@ class Action():
 
     @staticmethod
     def destroy_grid(loc: Coordinate, dir: Coordinate, grids: list[list[int]]) -> None:
-        loc += dir
-        if grids[loc.y][loc.x] == 1:
-            grids[loc.y][loc.x] = 0
+        target = loc + dir
+        grids[target.y][target.x] = 0
 
 
     @staticmethod
@@ -364,9 +367,10 @@ class Player(pygame.sprite.Sprite, Action):
         pygame.sprite.Sprite.__init__(self)
         Action.__init__(self)
 
-        self.image = pygame.Surface([GRID_SIZE//2, GRID_SIZE//2]) # change to an image later
-        self.image.fill("red")
-        self.rect = self.image.get_rect(center=((MAP_WIDTH//2 + 0.5) * GRID_SIZE + 0.5, (MAP_HEIGHT//2 + 0.5 + 3) * GRID_SIZE + 0.5))
+        self.image = pygame.image.load("assets/player.png").convert_alpha()
+        # self.image = pygame.Surface([GRID_SIZE//2, GRID_SIZE//2]) # change to an image later
+        # self.image.fill("red")
+        self.rect = self.image.get_rect(center=((MAP_WIDTH//2 + 0.5) * GRID_SIZE -1 , (MAP_HEIGHT//2 + 0.5) * GRID_SIZE -7))
 
         self.location = Coordinate(x=MAP_WIDTH//2, y=MAP_HEIGHT//2) # centre of map, (x, y)
         self.reward = 0
@@ -512,7 +516,7 @@ class MainEnv(gym.Env):
 if __name__ == "__main__":
     map = Map()
     win = Window()
-    win.__init__()
+    # win.__init__()
 
     player = Player()
     win.all_sprites.add(player)
