@@ -2,6 +2,7 @@ import pygame
 import gym
 import numpy as np
 from itertools import product
+from collections import namedtuple
 
 
 MAP_HEIGHT = 15
@@ -56,11 +57,7 @@ class Coordinate:
     # c: Coordinate object
     def __add__(self, c):
         newx, newy = self.x + c.x, self.y + c.y
-
-        if newx > self.x_max or newx < 0 or newy > self.y_max or newy < 0:
-            raise ValueError("Coordinate Out of Bound")
-        else:
-            return Coordinate(x=newx, y=newy)
+        return Coordinate(x=newx, y=newy)
 
 
     def __sub__(self, c):
@@ -112,17 +109,10 @@ action_to_direction = (
 )
 
 
-# handles map creation, path validation
-# and updating player+monster positions
-
-# player & monster has very limited capabilities,
-# and both are heavily tied to the map,
-# might as well put them into 1 class
 class Map:
-
-    #player_actions = None
-    #monster_actions = None
-
+    """
+    handles map creation and path validation
+    """
     def __init__(self) -> None:
         # the map maybe better stored by lists rather than ndarray,
         # as the map grows as the player moves forward
@@ -179,27 +169,58 @@ class Map:
     @staticmethod
     def gen_platform(n: int):
         return [[1 for i in range(MAP_WIDTH)] for j in range(n)]
+    
+    @staticmethod
+    def out_of_bound(c: Coordinate):
+        if c.x < 0 or c.x >= MAP_WIDTH or c.y < 0:
+            return True
+        else:
+            return False
 
- 
+
+# score = score given to player
+# success + score determines reward
+# e.g. even if score = 0, can still have -ve reward
+Status = namedtuple("Status", ["success", "score"])
 
 
-class Entity():
+class Entity:
 
     def __init__(self, start_loc: Coordinate):
         self.location = start_loc
     
     # move 1 block up/down/left/right
     # loc is passed by reference
-    def walk(self, dir: Coordinate): # coord, dy
-        self.location += dir
+    def walk(self, dir: Coordinate, map: Map) -> Status: # coord, dy
+        newloc = self.location + dir
+        
+        if Map.out_of_bound(newloc):
+            return Status(False, 0)
+        else:
+            self.location = newloc
+            return Status(True, dir.y)
 
     # can jump 2 platforms to up/down/left/right, but not diagonal
-    def jump(self, dir: Coordinate): # coord, dy
-        self.location += (dir * 2)
+    def jump(self, dir: Coordinate, map: Map) -> Status: # coord, dy
+        newloc = self.location + dir * 2
+        
+        if Map.out_of_bound(newloc):
+            return Status(False, 0)
+        else:
+            self.location = newloc
+            return Status(True, dir.y * 2)
 
     def destroy(self, dir: Coordinate, map: Map) -> None:
         target = self.location + dir
-        map.map[target.y][target.x] = 0
+        
+        if Map.out_of_bound(target):
+            return Status(False, 0)
+        
+        if map.map[target.y][target.x] == 0:
+            return Status(False, 0)
+        else:
+            map.map[target.y][target.x] = 0
+            return Status(True, 0)
 
     def is_alive(self, map: Map) -> bool:
         return map.map[self.location.y][self.location.x] == 1 # on platform
@@ -208,11 +229,7 @@ class Entity():
 class Player(Entity):
     def __init__(self, coordinate, max_freeze=3, freezer_cooldown=7, redbull_cooldown=0):
         
-        # TODO: starting loc should be defined in playground
         Entity.__init__(self, coordinate)
-
-        # jump is meant to be slightly better than walk with drawbacks,
-        # so jump range need not be variable
         
         self.max_freeze = max_freeze
 
@@ -233,34 +250,6 @@ class Player(Entity):
         self.redbull_cooldown = redbull_cooldown    # constant
         self.until_redbull = redbull_cooldown
 
-
-    # freeze platforms
-    def freezer(self, map: Map) -> bool: # none | reward
-        #if not self._has_freezer:
-        #    return False # if cooldown not over, return negative reward (-1)
-
-        for freeze_coord in self.can_freeze:
-            try:
-                coord = self.location + freeze_coord
-                map.map[coord.y][coord.x] = 1
-            except ValueError:
-                pass    # only freeze what's possible
-
-        self.until_freezer = self.freezer_cooldown # reset cooldown
-        return True
-
-
-    def redbull(self, map: Map): 
-        #if not self._has_redbull:
-        #    return
-
-        x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
-        while map.map[y][x] == 0 or (x, y) == (self.location.x, self.location.y): # lava | current pos
-            x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
-
-        self.location = Coordinate(x=x, y=y)
-
-
     @property
     def has_freezer(self) -> bool:
         return self.until_freezer == 0
@@ -268,6 +257,41 @@ class Player(Entity):
     @property
     def has_redbull(self) -> bool:
         return self.redbull_cooldown == 0
+    
+    # freeze platforms
+    def freezer(self, map: Map) -> Status: 
+        if not self.has_freezer:
+            return Status(False, 0)
+
+        count = 0
+        for freeze_coord in self.can_freeze:
+            try:
+                coord = self.location + freeze_coord
+                if map.map[coord.y][coord.x] == 0:
+                    map.map[coord.y][coord.x] = 1
+                    count += 1
+            except IndexError:
+                pass    # only freeze what's possible
+
+        self.until_freezer = self.freezer_cooldown # reset cooldown
+        
+        # using freezer when it has no effect = failure
+        return Status(bool(count), 0)
+
+
+    def redbull(self, map: Map) -> Status: 
+        if not self.has_redbull:
+           return Status(False, 0)
+
+        # TODO: better way to select new platform
+        x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
+        while map.map[y][x] == 0 or (x, y) == (self.location.x, self.location.y): # lava | current pos
+            x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
+
+        self.location = Coordinate(x=x, y=y)
+        return Status(True, self.location.y - y)
+
+    
     
     # a player may walk, jump, use freezer, destroy platforms
     # freezer has cooldown
@@ -510,13 +534,13 @@ if __name__ == "__main__":
                     else:
                         dir = action_to_direction[key]
                         if is_jump:
-                            player.jump(dir)
+                            player.jump(dir, map)
                             is_jump = False
                         elif is_destroy:
                             player.destroy(dir, map)
                             is_destroy = False
                         elif not is_jump and not is_destroy:
-                            player.walk(dir)
+                            player.walk(dir, map)
 
                     #print(player.reward)
 
