@@ -4,25 +4,42 @@ import numpy as np
 from itertools import product
 from collections import namedtuple
 
-
 MAP_HEIGHT = 15
 MAP_WIDTH = 9
 
+# 0-7: walk (w/ action_to_direction)
+# 8-15: destroy (w/ action_to_direction)
+# 16-19: jump (w/ action_to_direction)
+# 20: freezer, 21: redbull
+keys_to_action = {
+    ("w", "8"): 0, # walk; up
+    ("s", "2"): 1, # walk; down
+    ("a", "4"): 2, # walk; left
+    ("d", "6"): 3, # walk; right
+    ("q", "7"): 4, # walk; up-left
+    ("e", "9"): 5, # walk; up-right
+    ("z", "1"): 6, # walk; down-left
+    ("c", "3"): 7, # walk; down-right
 
-key_to_action2 = {
-    (pygame.K_UP, pygame.K_a, pygame.K_KP8): 0, # up
-    (pygame.K_DOWN, pygame.K_s, pygame.K_KP6): 1, # down
-    (pygame.K_LEFT, pygame.K_a, pygame.K_KP4) : 2, # left
-    (pygame.K_RIGHT, pygame.K_d, pygame.K_KP6): 3, # right
-    (pygame.K_q, ): 4, # up-left
-    (pygame.K_e, ): 5, # up-right
-    (pygame.K_z, ): 6, # down-left
-    (pygame.K_c, ): 7, # down-right
-    (pygame.K_SPACE, pygame.K_j): 8, # jump
-    (pygame.K_l, ): 9, # freezer
-    (pygame.K_SEMICOLON, ): 10, # redbull
-    (pygame.K_k, ): 11, # destroy
+    ("kw", "k8"): 8, # destroy; up
+    ("ks", "k2"): 9, # destroy; down
+    ("ka", "k4"): 10, # destroy; left
+    ("kd", "k6"): 11, # destroy; right
+    ("kq", "k7"): 12, # destroy; up-left
+    ("ke", "k9"): 13, # destroy; up-right
+    ("kz", "k1"): 14, # destroy; down-left
+    ("kc", "k3"): 15, # destroy; down-right
+
+    (" w", " 8"): 16, # jump; up
+    (" s", " 2"): 17, # jump; down
+    (" a", " 4"): 18, # jump; left
+    (" d", " 6"): 19, # jump; right
+
+    "l": 20, # freezer
+    ";": 21, # redbull
+
 }
+
 
 # make coordinates objects for better readability,
 # handles coordinate operations too
@@ -82,17 +99,6 @@ class Coordinate:
             raise ValueError("Coordinate Order Not Specified")
 
 
-action_to_direction = (
-    Coordinate(x=0, y=1), # up
-    Coordinate(x=0, y=-1), # down
-    Coordinate(x=-1, y=0), # left
-    Coordinate(x=1, y=0), # right
-    Coordinate(x=-1, y=1), # up-left
-    Coordinate(x=1, y=1), # up-right
-    Coordinate(x=-1, y=-1), # down-left
-    Coordinate(x=1, y=-1), # down-right
-)
-
 
 class Map:
     """
@@ -106,25 +112,24 @@ class Map:
         # and dynamically generate the rest
         self.grids = [[0 for i in range(MAP_WIDTH)] for j in range(MAP_HEIGHT)] # actual map
 
-        # initial platforms at center
         # TODO: move this to playground
+        # generate initial platforms
         self.init_platform_size = 5
         for j in range(MAP_HEIGHT//2 - self.init_platform_size//2, MAP_HEIGHT//2 + self.init_platform_size//2 + 1):
             for i in range(MAP_WIDTH//2 - self.init_platform_size//2, MAP_WIDTH//2 + self.init_platform_size//2 + 1):
                 self.grids[j][i] = 1
 
 
-    def shift(self, n: int) -> None:
-        # upward = +(1)
-        self.grids += self.gen_platform(n)
-
-    # get slices of grids for rendering
+    # get slices of grids for rendering and RL algo
     def get_grids(self, centre):
         if centre < MAP_HEIGHT // 2:
             return self.grids[:MAP_HEIGHT]
         else:
             return self.grids[centre-MAP_HEIGHT//2: centre+MAP_HEIGHT//2+1]
 
+    # append n new platforms to grids
+    def expand(self, n: int) -> None:
+        self.grids += self.gen_platform(n)
 
     @staticmethod
     def gen_platform(n: int):
@@ -149,7 +154,7 @@ class Entity:
 
     # move 1 block up/down/left/right
     # loc is passed by reference
-    def walk(self, dir: Coordinate, map: Map) -> Status: # coord, dy
+    def walk(self, dir: Coordinate) -> Status:
         newloc = self.location + dir
 
         if Map.out_of_bound(newloc):
@@ -159,7 +164,7 @@ class Entity:
             return Status(True, dir.y)
 
     # can jump 2 platforms to up/down/left/right, but not diagonal
-    def jump(self, dir: Coordinate, map: Map) -> Status: # coord, dy
+    def jump(self, dir: Coordinate) -> Status:
         newloc = self.location + dir * 2
 
         if Map.out_of_bound(newloc):
@@ -168,35 +173,32 @@ class Entity:
             self.location = newloc
             return Status(True, dir.y * 2)
 
-    def destroy(self, dir: Coordinate, map: Map) -> None:
+    def destroy(self, dir: Coordinate, m: Map) -> None:
         target = self.location + dir
 
         if Map.out_of_bound(target):
             return Status(False, 0)
 
-        if map.grids[target.y][target.x] == 0:
+        if m.grids[target.y][target.x] == 0:
             return Status(False, 0)
         else:
-            map.grids[target.y][target.x] = 0
+            m.grids[target.y][target.x] = 0
             return Status(True, 0)
 
-    @property
-    def is_alive(self, map: Map) -> bool:
-        return map.grids[self.location.y][self.location.x] == 1 # on platform
-    
-    
+
+    def is_alive(self, m: Map) -> bool:
+        return m.grids[self.location.y][self.location.x] == 1 # on platform
+
+
     # have valid path = have ways to advance to the next row
-    # including walking sideways 
-    
+    # including walking sideways
+
     # return if valid path exist,
     # and x coordinate of a reachable platform on the next row
-    
+
     # look for forward walk/jump first,
-    def have_valid_path(self, map: Map) -> Status:
+    def have_valid_path(self, m: Map) -> Status:
        pass
-    
-       
-       
 
 
 class Player(Entity):
@@ -217,20 +219,20 @@ class Player(Entity):
             and not (i == 0 and j == 0)
             ]
 
-        self.freezer_cooldown = freezer_cooldown    # constant
-        self.until_freezer = freezer_cooldown
+        self.FREEZER_COOLDOWN = 0 #freezer_cooldown
+        self.until_freezer = self.FREEZER_COOLDOWN
 
-        self.redbull_cooldown = redbull_cooldown    # constant
-        self.until_redbull = redbull_cooldown
+        self.REDBULL_COOLDOWN = 0 #redbull_cooldown
+        self.until_redbull = self.REDBULL_COOLDOWN
 
 
-    def walk(self, dir: Coordinate, map: Map) -> Status:
-        map.shift(dir.y)
-        return super().walk(dir, map)
+    def walk(self, dir: Coordinate, m: Map) -> Status:
+        m.expand(dir.y)
+        return super().walk(dir)
 
-    def jump(self, dir: Coordinate, map: Map) -> Status:
-        map.shift(dir.y*2)
-        return super().jump(dir, map)
+    def jump(self, dir: Coordinate, m: Map) -> Status:
+        m.expand(dir.y*2)
+        return super().jump(dir)
 
     @property
     def has_freezer(self) -> bool:
@@ -238,12 +240,14 @@ class Player(Entity):
 
     @property
     def has_redbull(self) -> bool:
-        return self.redbull_cooldown == 0
+        return self.until_redbull == 0
 
     # freeze platforms
     def freezer(self, m: Map) -> Status:
-        #if not self.has_freezer:
-        #    return Status(False, 0)
+        if not self.has_freezer:
+            return Status(False, 0)
+
+        self.until_freezer = self.FREEZER_COOLDOWN # reset cooldown
 
         count = 0
         for freeze_coord in self.can_freeze:
@@ -252,39 +256,40 @@ class Player(Entity):
                 if m.grids[coord.y][coord.x] == 0:
                     m.grids[coord.y][coord.x] = 1
                     count += 1
-                    
-
-        self.until_freezer = self.freezer_cooldown # reset cooldown
 
         # using freezer when it has no effect = failure
         return Status(bool(count), 0)
 
 
     def redbull(self, m: Map) -> Status:
-        #if not self.has_redbull:
-        #   return Status(False, 0)
+        if not self.has_redbull:
+            return Status(False, 0)
+
+        self.until_redbull = self.REDBULL_COOLDOWN # reset countdown
 
         # TODO: better way to select new platform
         x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
         while m.grids[y][x] == 0 or (x, y) == (self.location.x, self.location.y): # lava | current pos
             x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
 
-        m.shift(y - self.location.y)
+        dy = y - self.location.y
         self.location = Coordinate(x=x, y=y)
-        return Status(True, y - self.location.y)
+        m.expand(dy)
+
+        return Status(True, dy)
 
 
     # a player may walk, jump, use freezer,
     # freezer has cooldown
     # def valid_walk(self, map: Map) -> set:
     #    result = set()
-       
+
     #    for action, c in enumerate(action_to_direction):
     #         target = self.location + c
     #         if Map.out_of_bound(target):
     #             if map.map[target.y][target.x] == 1:
     #                 result.add(action)
-    
+
 
 
 class Monster(Entity):
@@ -303,18 +308,14 @@ class Monster(Entity):
 
 
 class Playground:
-
-    # 0-7: walk (see action_to_direction)
-    # 8-15: destroy
-    # 16-19: jump (up down left right)
-    # 20: freezer, 21: redbull
-
-
     def __init__(self) -> None:
         self.map = Map()
         self.player = Player(Coordinate(x=MAP_WIDTH//2, y=MAP_HEIGHT//2))
         self.monster = Monster()
 
+        self.score = 0
+
+        # to be removed (
         self._key_to_action = {
                                 'w': 0, # up
                                 's': 1, # down
@@ -331,10 +332,20 @@ class Playground:
                             }
         self.is_jump = False
         self.is_destroy = False
-        
-        self.score = 0
+        # )
 
+        self._action_to_direction = (
+                                    Coordinate(x=0, y=1), # up
+                                    Coordinate(x=0, y=-1), # down
+                                    Coordinate(x=-1, y=0), # left
+                                    Coordinate(x=1, y=0), # right
+                                    Coordinate(x=-1, y=1), # up-left
+                                    Coordinate(x=1, y=1), # up-right
+                                    Coordinate(x=-1, y=-1), # down-left
+                                    Coordinate(x=1, y=-1), # down-right
+                                )
 
+    # to be removed
     def key_to_action(self, key: pygame.key) -> None:
         action = None
 
@@ -375,18 +386,20 @@ class Playground:
         except KeyError:
             return
 
-        playground.play(action)
-        print("Player at:", player.location.coord(index=False))
+        s = playground.play(action)
+        print("Player at:", self.player.location.coord(index=False))
+        print("Player score:", self.score)
+        return s
 
 
     def play(self, action: int) -> Status:
         # match case can't match range yet
         if action in range(0, 7+1):
-            s = self.player.walk(action_to_direction[action], self.map)
+            s = self.player.walk(self._action_to_direction[action], self.map)
         elif action in range(8, 15+1):
-            s = self.player.destroy(action_to_direction[action-8], self.map)
+            s = self.player.destroy(self._action_to_direction[action-8], self.map)
         elif action in range(16, 19+1):
-            s = self.player.jump(action_to_direction[action-16], self.map)
+            s = self.player.jump(self._action_to_direction[action-16], self.map)
         elif action == 20:
             s = self.player.freezer(self.map)
         elif action == 21:
@@ -394,40 +407,37 @@ class Playground:
         else:
             raise ValueError("Unknown Action")
 
+        self.score += s.score
 
-        if not player.is_alive:
+        if not self.player.is_alive(self.map):
             self.score -= 10
             return Status(False, -10)
-        
+
         # TODO: ask monster to play after player
         # monster may kill player
-        
-        if not player.is_alive:
-            self.score -= 10
-            return Status(False, -10)
-        
-        self.score += s.score
+
         return s
-        
+
 
 
     # return 2d array representing the state:
-    # 1st row is for player+monster stats,
+    # 1st row is for player + monster stats,
     # the rest is the actual observable map
 
     # this time we may use ndarray,
     # as observations are read-only
 
     # used for rendering
-    def state(self):
+    def state(self) -> tuple[int, int, list[list[int]]]:
         return (
-            *player.location.coord(index=False),
+            *self.player.location.coord(index=False),
             # TODO: think of useful fields
+            self.map.get_grids(self.player.location.y)[::-1] # reversed for rendering
         )
-    
+
     # return 1d vector state specifically for RL algo
     def state_rl(self) -> list:
-        pass
+        return [i for row in self.map.get_grids(self.player.location.y) for i in row]
 
 
 class Window:
@@ -444,10 +454,10 @@ class Window:
         pygame.display.set_caption("The Floor is Lava")
 
         self.fps = fps
-        
-        self.grid_size = pygame.image.load("assets/lava.png").get_height()
 
-        self.win_size = (MAP_WIDTH * self.grid_size + 1, (MAP_HEIGHT+2) * self.grid_size + 1) # resolution pending
+        self.GRID_SIZE = pygame.image.load("assets/lava.png").get_height()
+
+        self.win_size = (MAP_WIDTH * self.GRID_SIZE + 1, (MAP_HEIGHT+2) * self.GRID_SIZE + 1) # resolution pending
         self.win = pygame.display.set_mode(self.win_size)
 
         self.surface = pygame.Surface(self.win_size)
@@ -474,7 +484,7 @@ class Window:
         # draw grids of lava / platform
         for i in range(MAP_HEIGHT):
             for j in range(MAP_WIDTH):
-                topleft = j*self.grid_size, (i+2)*self.grid_size
+                topleft = j*self.GRID_SIZE, (i+2)*self.GRID_SIZE
 
                 if grids[i][j] == 0: # lava
                     self.surface.blit(self.lava_image, self.lava_image.get_rect(topleft=topleft))
@@ -483,12 +493,20 @@ class Window:
                 else: # platform
                     self.surface.blit(self.platform_image, self.lava_image.get_rect(topleft=topleft))
 
-        player_image_x = (self.playground.player.location.x+0.5) * self.grid_size
-        player_image_y = (MAP_HEIGHT//2+0.5+2) * self.grid_size
-        if self.playground.player.location.y < MAP_HEIGHT // 2: # y < 7
-            player_image_y = (MAP_HEIGHT - self.playground.player.location.y - 1 +0.5+2) * self.grid_size
+        player_image_x = self.playground.player.location.x * self.GRID_SIZE
+        player_image_y = (MAP_HEIGHT//2+2) * self.GRID_SIZE
+        if self.playground.player.location.y < MAP_HEIGHT // 2:
+            player_image_y = (MAP_HEIGHT - self.playground.player.location.y - 1 +2) * self.GRID_SIZE
 
-        self.surface.blit(self.player_image, self.player_image.get_rect(center=(player_image_x, player_image_y)))
+        self.surface.blit(self.player_image, self.player_image.get_rect(topleft=(player_image_x, player_image_y)))
+
+        # rendering monster
+            #monster_image_x = self.playground.monster.location.x * self.GRID_SIZE
+            #monster_image_y = (MAP_HEIGHT//2+2) * self.GRID_SIZE
+            #if self.playground.monster.location.y < MAP_HEIGHT // 2:
+            #    monster_image_y = (MAP_HEIGHT - self.playground.monster.location.y - 1 +2) * self.GRID_SIZE
+
+            #self.surface.blit(self.monster_image, self.monster_image.get_rect(topleft=(monster_image_x, monster_image_y)))
 
         self.win.blit(self.surface, self.surface.get_rect())
         pygame.display.flip()
@@ -503,8 +521,8 @@ class MainEnv(gym.Env):
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
         # then 15 numbers representing rows
-        self.obs_space = gym.spaces.Box(shape=(21,))
-        
+        self.obs_space = gym.spaces.Box(low=0, high=999999, shape=(21,))
+
         # 8 walk, 8 destroy, 4 jump, freezer, redbull
         self.act_space = gym.spaces.Discrete(22)
 
@@ -513,12 +531,15 @@ class MainEnv(gym.Env):
         self.fps = fps
         self.window = Window(self.playground, self.fps)
 
+        self.render_mode = None
+
 
     def reset(self, seed=None, options=None) -> tuple:
         super().reset(seed=seed)    # reset RNG
 
         # TODO: resetting code
         self.playground = Playground()
+        self.window = Window(self.playground, self.fps)
 
         observation = self.playground.state_rl()  # state is more than the map itself
         info = dict()   # no extra info
@@ -532,15 +553,15 @@ class MainEnv(gym.Env):
 
         # TODO: step code + assign variables below
         status = self.playground.play(action)
-        
+
         observation = self.playground.state_rl()
-        
+
         if status.success is False and status.score == 0:
             reward = -1
         else:
             reward = status.score
-            
-        terminated = (status.score == -10)
+
+        terminated = (status.score == -10) # entity dead
         truncated = None
 
         info = dict()
@@ -570,23 +591,19 @@ if __name__ == "__main__":
     playground = Playground()
     win = Window(playground=playground, fps=15)
 
-    # TODO: change reference later
-    map = playground.map
-    player = playground.player
-
     running = True
+    s = Status(True, 0)
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 running = False
 
             if event.type == pygame.KEYDOWN:
-                playground.key_to_action(event.key)
-
-        if not player.is_alive(map):
-            # reward -= 10
-            running = False
+                s = playground.key_to_action(event.key)
 
         win.draw()
+
+        if s.score == -10:
+            running = False
 
     pygame.quit()
