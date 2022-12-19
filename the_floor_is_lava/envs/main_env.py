@@ -307,7 +307,15 @@ class Monster(Entity):
         pass
 
 
+State = namedtuple("State", ["player", "monster", "freezer", "redbull", "slice"])
+
 class Playground:
+
+    # 0-7: walk (see action_to_direction)
+    # 8-15: destroy
+    # 16-19: jump (up down left right)
+    # 20: freezer, 21: redbull
+
     def __init__(self) -> None:
         self.map = Map()
         self.player = Player(Coordinate(x=MAP_WIDTH//2, y=MAP_HEIGHT//2))
@@ -391,6 +399,9 @@ class Playground:
         print("Player score:", self.score)
         return s
 
+    @property
+    def is_alive(self) -> bool:
+        return self.map.grids[self.player.location.y][self.player.location.x] == 1 # on platform
 
     def play(self, action: int) -> Status:
         # match case can't match range yet
@@ -407,37 +418,74 @@ class Playground:
         else:
             raise ValueError("Unknown Action")
 
-        self.score += s.score
-
-        if not self.player.is_alive(self.map):
+        if not self.is_alive:
             self.score -= 10
             return Status(False, -10)
 
         # TODO: ask monster to play after player
         # monster may kill player
-
+        
+        if not self.is_alive:
+            self.score -= 10
+            return Status(False, -10)
+        
+        self.score += s.score
         return s
+    
+    def _get_slice(self):
+        centre = self.player.location.y
+        if centre < MAP_HEIGHT // 2:
+            return self.map.grids[:MAP_HEIGHT][::-1]
+        else:
+            return self.map.grids[centre-MAP_HEIGHT//2: centre+MAP_HEIGHT//2+1][::-1]
 
-
-
-    # return 2d array representing the state:
-    # 1st row is for player + monster stats,
-    # the rest is the actual observable map
-
-    # this time we may use ndarray,
-    # as observations are read-only
 
     # used for rendering
-    def state(self) -> tuple[int, int, list[list[int]]]:
-        return (
-            *self.player.location.coord(index=False),
-            # TODO: think of useful fields
-            self.map.get_grids(self.player.location.y)[::-1] # reversed for rendering
+    # using pygame coordinates
+    @property
+    def state_render(self):
+        centre = self.player.location.y
+        if centre < MAP_HEIGHT // 2:
+            player_coord = Coordinate(x=self.player.location.x, y=MAP_HEIGHT - self.player.location.y - 1)
+        else:
+            player_coord = Coordinate(x=self.player.location.x, y=MAP_HEIGHT//2)
+        
+        # vert. distance from player to monster
+        monster_dy = self.monster.location.y - self.player.location.y
+        if abs(monster_dy) >= MAP_HEIGHT // 2:
+            monster_coord = Coordinate(x=-1, y=-1)  # absent from screen
+        else:
+            monster_coord = Coordinate(x=self.monster.location.x, y=monster_dy + MAP_HEIGHT//2)
+        
+        return State(
+            player=player_coord,
+            monster=monster_coord,
+            freezer=self.player.FREEZER_COOLDOWN,
+            redbull=self.player.REDBULL_COOLDOWN,
+            slice=self._get_slice(),
         )
-
+    
+    @staticmethod
+    def _binary(l: list) -> int:
+        result = 0
+        for index, element in enumerate(reversed(l)):
+            result += element * (2 ** index)
+        return result
+     
     # return 1d vector state specifically for RL algo
-    def state_rl(self) -> list:
-        return [i for row in self.map.get_grids(self.player.location.y) for i in row]
+    # player xy, monster xy, freezer&redbull cooldown,
+    # then $(MAP_HEIGHT) numbers representing rows
+    @property
+    def state_rl(self) -> tuple:
+        s = self.state_render
+        return (
+            *s.player.coord(index=False),
+            *s.monster.coord(index=False),
+            s.freezer,
+            s.redbull,
+            *[self._binary(i) for i in s.slice]
+        )
+        
 
 
 class Window:
@@ -448,7 +496,7 @@ class Window:
 
     font = pygame.font.get_fonts()
 
-    def __init__(self, playground: Playground, fps:int) -> None:
+    def __init__(self, playground: Playground, fps:int|None) -> None:
         pygame.init()
         pygame.display.init()
         pygame.display.set_caption("The Floor is Lava")
@@ -463,8 +511,6 @@ class Window:
         self.surface = pygame.Surface(self.win_size)
         self.surface.fill("darkorange2") # background colour
 
-        self.playground = playground
-
         self.lava_image = pygame.image.load("assets/lava.png").convert()
         self.platform_image = pygame.image.load("assets/platform.png").convert()
         self.platform_lip_image = pygame.image.load("assets/platform_lip.png").convert_alpha()
@@ -472,41 +518,46 @@ class Window:
         self.monster_image = pygame.image.load("assets/monster.png").convert_alpha()
 
         self.clock = pygame.time.Clock()
+        
+        self.playground = playground
 
 
     # most of the rendering belongs to here
     def draw(self) -> None:
-        self.clock.tick(self.fps)
+        
+        if self.fps is not None:
+            self.clock.tick(self.fps)
 
-        # TODO: rendering code
-        grids = self.playground.map.get_grids(self.playground.player.location.y)[::-1] # get slices of grids
+        s = self.playground.state_render
 
         # draw grids of lava / platform
         for i in range(MAP_HEIGHT):
             for j in range(MAP_WIDTH):
-                topleft = j*self.GRID_SIZE, (i+2)*self.GRID_SIZE
+                
+                # leave 2 rows for UI
+                topleft = (j*self.GRID_SIZE, (i+2)*self.GRID_SIZE)
 
-                if grids[i][j] == 0: # lava
-                    self.surface.blit(self.lava_image, self.lava_image.get_rect(topleft=topleft))
-                    if i-1 >= 0 and grids[i-1][j] == 1: # platform above
-                        self.surface.blit(self.platform_lip_image, self.lava_image.get_rect(topleft=topleft))
+                if s.slice[i][j] == 0: # lava
+                    self.surface.blit(
+                        self.lava_image,
+                        self.lava_image.get_rect(topleft=topleft)
+                        )
+                    # draw front side of platform if there is platform above
+                    if i-1 >= 0 and s.slice[i-1][j] == 1:
+                        self.surface.blit(
+                            self.platform_lip_image,
+                            self.lava_image.get_rect(topleft=topleft)
+                            )
                 else: # platform
                     self.surface.blit(self.platform_image, self.lava_image.get_rect(topleft=topleft))
 
-        player_image_x = self.playground.player.location.x * self.GRID_SIZE
-        player_image_y = (MAP_HEIGHT//2+2) * self.GRID_SIZE
-        if self.playground.player.location.y < MAP_HEIGHT // 2:
-            player_image_y = (MAP_HEIGHT - self.playground.player.location.y - 1 +2) * self.GRID_SIZE
+        player_image_x = (s.player.x+0.5) * self.GRID_SIZE 
+        player_image_y = (s.player.y+0.5+2) * self.GRID_SIZE - self.GRID_SIZE//3
 
-        self.surface.blit(self.player_image, self.player_image.get_rect(topleft=(player_image_x, player_image_y)))
-
-        # rendering monster
-            #monster_image_x = self.playground.monster.location.x * self.GRID_SIZE
-            #monster_image_y = (MAP_HEIGHT//2+2) * self.GRID_SIZE
-            #if self.playground.monster.location.y < MAP_HEIGHT // 2:
-            #    monster_image_y = (MAP_HEIGHT - self.playground.monster.location.y - 1 +2) * self.GRID_SIZE
-
-            #self.surface.blit(self.monster_image, self.monster_image.get_rect(topleft=(monster_image_x, monster_image_y)))
+        self.surface.blit(
+            self.player_image,
+            self.player_image.get_rect(center=(player_image_x, player_image_y))
+            )
 
         self.win.blit(self.surface, self.surface.get_rect())
         pygame.display.flip()
@@ -515,29 +566,29 @@ class Window:
 class MainEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 15}
 
-
-    def __init__(self, render_mode=None, fps=15) -> None:
+    def __init__(self, render_mode=None, fps=None, trunc=300) -> None:
 
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
         # then 15 numbers representing rows
-        self.obs_space = gym.spaces.Box(low=0, high=999999, shape=(21,))
-
+        self.obs_space = gym.spaces.Box(shape=(6+MAP_HEIGHT,))
+        
         # 8 walk, 8 destroy, 4 jump, freezer, redbull
         self.act_space = gym.spaces.Discrete(22)
 
         self.playground = Playground()
+        
         # objects for rendering
         self.fps = fps
         self.window = Window(self.playground, self.fps)
-
-        self.render_mode = None
+        
+        self.render_mode = render_mode
+        self.trunc = trunc  # truncate after $(trunc) scores
 
 
     def reset(self, seed=None, options=None) -> tuple:
         super().reset(seed=seed)    # reset RNG
 
-        # TODO: resetting code
         self.playground = Playground()
         self.window = Window(self.playground, self.fps)
 
@@ -560,10 +611,9 @@ class MainEnv(gym.Env):
             reward = -1
         else:
             reward = status.score
-
-        terminated = (status.score == -10) # entity dead
-        truncated = None
-
+            
+        terminated = (status.score == -10)
+        truncated = (self.playground.score >= 300)
         info = dict()
 
         self._render_frame()
@@ -603,7 +653,7 @@ if __name__ == "__main__":
 
         win.draw()
 
-        if s.score == -10:
+        if not playground.is_alive:
             running = False
 
     pygame.quit()
