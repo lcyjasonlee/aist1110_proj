@@ -123,7 +123,7 @@ class Map:
         # TODO: move this to playground
         # generate initial platforms
         self.init_platform_size = 5
-        for j in range(MAP_HEIGHT//2 - self.init_platform_size//2, MAP_HEIGHT//2 + self.init_platform_size//2 + 1):
+        for j in range(MAP_HEIGHT//2 - self.init_platform_size//2, MAP_HEIGHT):
             for i in range(MAP_WIDTH//2 - self.init_platform_size//2, MAP_WIDTH//2 + self.init_platform_size//2 + 1):
                 self.grids[j][i] = 1
 
@@ -291,7 +291,6 @@ class Player(Entity):
     #                 result.add(action)
 
 
-
 class Monster(Entity):
     def __init__(self, coordinate = Coordinate(x=MAP_WIDTH//2 - 1, y=MAP_HEIGHT//2 - 1)):
         Entity.__init__(self, coordinate)
@@ -307,74 +306,119 @@ class Monster(Entity):
                         Coordinate(x=1, y=-1), # down-right, walk
                        )
 
+    def respawn(self, player_location: Coordinate, m: Map) -> None:
+        self.location = Coordinate(x=2, y=5)
 
     def _is_alive(self, m: map) -> bool:
-        return m.grids[self.location.y][self.location.x] == 1 # into lava
+        return m.grids[self.location.y][self.location.x] == 1 # on platform
 
     # a monster may walk/jump
     def _valid_action(self, player_location: Coordinate, m: Map) -> list | None:
         action = []
 
         v = player_location - self.location # vector from monster to player
-        dist = [v.dot_product(dir) for dir in self._directions] # list of distance travelled by each direction
-        max_dist = max(dist) # max distance possible
+        dist = [v.dot_product(dir) for dir in self._directions] # projection length of each direction
+        max_dist = max(dist) # max distance possible; priority: walk (+jump) > diagonal walk
 
         while len(dist) > 0:
-            dir = dist.index(max(dist))
+            dir = dist.index(max_dist)
             v = self.location + self._directions[dir]
 
-            if dir in range(4, 8): # diagonal walk
-                if m.grids[v.y][v.x] == 0: # if into lava
+            if dir in range(4, 8): # diagonal
+                if m.grids[v.y][v.x] == 0: # if walk into lava
                     dist.pop(dir)
                 else:
                     action.append(self._directions[dir])
+                    dist.pop(dir)
 
-            else: # walk or jump
-                v_jump = self.location + self._directions[dir] * 2
+            else: # up / down / left / right
+                v_jump = v + self._directions[dir]
                 if m.grids[v.y][v.x] == 0 and m.grids[v_jump.y][v_jump.x] == 0: # if walk and jump into lava
                     dist.pop(dir)
                 else:
-                    if m.grids[v.y][v.x] != 0: # if walkable
-                        action.append(self._directions[dir])
-
-                    if m.grids[v_jump.y][v_jump.x] != 0: # if also jumpable
+                    if m.grids[v_jump.y][v_jump.x] != 0: # if jump onto platform
                         action.append(self._directions[dir] * 2)
+                        dist.pop(dir)
 
-            if len(action) == 0 and max_dist != max(dist): # largest distance action is impossible
-                max_dist = max(dist)
-            else:
+                    if m.grids[v.y][v.x] != 0: # if also walk onto platform
+                        action.append(self._directions[dir])
+                        dist.pop(dir)
+
+            if len(action) > 0: # largest (solo) distance action possible
                 break
 
+            elif max_dist != max(dist): # look for second largest distance action
+                max_dist = max(dist)
 
-        if len(dist) == 0: # if no possible action to reach player
+        if len(dist) == 0: # if no closest action to reach player
             return None
 
         return action
+
+    # deprecated if need not to return Status
+    def _dir_to_action(self, dir: Coordinate) -> Status:
+        if abs(dir.x) == 2 or abs(dir.y) == 2:
+            return super().jump(dir // 2)
+        else:
+            return super().walk(dir)
+
+    # to be rewritten
+    def _random_forward_action(self, m: Map) -> Status:
+        v = self.location + self._directions[0] * 2
+        if m.grids[v.y][v.x] == 1: # jump forward
+            return super().jump(self._directions[0])
+
+        v = self.location + self._directions[0]
+        if m.grids[v.y][v.x] == 1: # walk forward
+            return super().walk(self._directions[0])
+
+        v = self.location + self._directions[4]
+        if m.grids[v.y][v.x] == 1: # walk up-left
+            return super().walk(self._directions[4])
+
+        v = self.location + self._directions[5]
+        if m.grids[v.y][v.x] == 1: # walk up-right
+            return super().walk(self._directions[5])
+
+        return Status(False, 0)
 
 
     # take a random action for the monster
     # among all valid actions,
     # prefer actions that can move the monster forward
 
-    # take a action that can direcly catch player if available, otherwise take the forwardmost action
+    # take an action that can direcly catch player, otherwise take the action to get closest to player
     def step(self, player_location: Coordinate, m: Map) -> Status:
         if not self._is_alive(m): # if dropped into lava
-            self.location = Coordinate(x=-1, y=-1) # reset coordinate
+            self.respawn(player_location, m) # reset coordinate; possibly furthest behind player
             return
 
         action = self._valid_action(player_location, m)
 
         if action is None: # no possible action
-            return Status(False, 0)
+            #self.location += {some_random_coord}
+            return self._random_forward_action(m)
 
+        elif len(action) == 1: # only 1 possible action
+            #self.location += action.pop()
+            return self._dir_to_action(action.pop())
+
+        # only (walk and/or jump) possible
+        # else: catch player directly if possible
         for dir in action:
             if (self.location + dir) == player_location: # if directly catch player
-                self.location += dir
-                return Status(True, dir.y)
+                #self.location += dir
+                return self._dir_to_action(dir)
 
-        dir = min(action, key=lambda c: min(abs(player_location.x - (self.location.x + c.x)), abs(player_location.y - (self.location.y + c.y))))
-        self.location += dir
-        return Status(True, dir.y)
+        # else: get cloest to player
+        if action[0].y == 0: # horizontal
+            dir = min(action, key=lambda c: abs(player_location.x - (self.location.x + c.x)))
+            #self.location += dir
+            return self._dir_to_action(dir)
+        else: # vertical
+            dir = min(action, key=lambda c: abs(player_location.y - (self.location.y + c.y)))
+            #self.location += dir
+            return self._dir_to_action(dir)
 
 
 State = namedtuple("State", ["player", "monster", "freezer", "redbull", "slice"])
