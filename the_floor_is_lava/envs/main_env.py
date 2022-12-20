@@ -94,10 +94,6 @@ class Coordinate:
         return (self.x == c.x) and (self.y == c.y)
 
 
-    def dot_product(self, c) -> int:
-        return (self.x * c.x) + (self.y * c.y)
-
-
     # index=True: tuple is in order of matrix indices
     # i.e. (a, b) meant to be interpreted as matrix[a][b]
     def coord(self, *, index=None):
@@ -138,6 +134,7 @@ class Map:
     @staticmethod
     def gen_platform() -> list[list[int]]:
         #TODO: better way to generate new platforms
+        # may generate a chunk of new rows rather than row-by-row
         return [[0, 0, 1, 1, 1, 1, 1, 0, 0]]
 
     @staticmethod
@@ -190,6 +187,13 @@ class Entity:
             return Status(True, 0)
 
 
+    def is_alive(self, m: map) -> bool:
+        if not Map.out_of_bound(self.location):
+            return m.grids[self.location.y][self.location.x] == 1 # on platform
+        else:
+            return False
+
+
     # have valid path = have ways to advance to the next row
     # including walking sideways
 
@@ -202,7 +206,7 @@ class Entity:
 
 
 class Player(Entity):
-    def __init__(self, coordinate, max_freeze=3, freezer_cooldown=7, redbull_cooldown=10):
+    def __init__(self, coordinate, max_freeze=3, freezer_reset=7, redbull_reset=10):
 
         Entity.__init__(self, coordinate)
 
@@ -219,11 +223,11 @@ class Player(Entity):
             and not (i == 0 and j == 0)
             ]
 
-        self.FREEZER_COOLDOWN = 0 #freezer_cooldown
-        self.until_freezer = self.FREEZER_COOLDOWN
+        self.FREEZER_RESET = freezer_reset
+        self.freezer_cooldown = self.FREEZER_RESET
 
-        self.REDBULL_COOLDOWN = 0 #redbull_cooldown
-        self.until_redbull = self.REDBULL_COOLDOWN
+        self.REDBULL_RESET = redbull_reset
+        self.redbull_cooldown = self.REDBULL_RESET
 
 
     def walk(self, dir: Coordinate, m: Map) -> Status:
@@ -238,18 +242,18 @@ class Player(Entity):
 
     @property
     def has_freezer(self) -> bool:
-        return self.until_freezer == 0
+        return self.freezer_cooldown == 0
 
     @property
     def has_redbull(self) -> bool:
-        return self.until_redbull == 0
+        return self.redbull_cooldown == 0
 
     # freeze platforms
     def freezer(self, m: Map) -> Status:
         if not self.has_freezer:
             return Status(False, 0)
 
-        self.until_freezer = self.FREEZER_COOLDOWN # reset cooldown
+        self.freezer_cooldown = self.FREEZER_RESET # reset cooldown
 
         count = 0
         for freeze_coord in self.can_freeze:
@@ -267,7 +271,7 @@ class Player(Entity):
         if not self.has_redbull:
             return Status(False, 0)
 
-        self.until_redbull = self.REDBULL_COOLDOWN # reset countdown
+        self.redbull_cooldown = self.REDBULL_RESET # reset countdown
 
         # TODO: better way to select new platform
         x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
@@ -294,173 +298,55 @@ class Player(Entity):
 
 
 class Monster(Entity):
-    
-    __DIRECTIONS = (
+
+    _DIRECTIONS = (
                         Coordinate(x=0, y=1), # up, walk
                         Coordinate(x=0, y=-1), # down, walk
                         Coordinate(x=-1, y=0), # left, walk
                         Coordinate(x=1, y=0), # right, walk
-                        
+
                         Coordinate(x=0, y=2), # up, jump
                         Coordinate(x=0, y=-2), # down, jump
                         Coordinate(x=-2, y=0), # left, jump
                         Coordinate(x=2, y=0), # right, jump
-                        
+
                         Coordinate(x=-1, y=1), # up-left, walk
                         Coordinate(x=1, y=1), # up-right, walk
                         Coordinate(x=-1, y=-1), # down-left, walk
                         Coordinate(x=1, y=-1), # down-right, walk
                        )
-    
-    def __init__(self, coordinate = Coordinate(x=MAP_WIDTH//2 - 1, y=MAP_HEIGHT//2 - 1)):
+
+    def __init__(self, coordinate = Coordinate(x=-1, y=-1)):
         Entity.__init__(self, coordinate)
 
-        self._directions = (
-                        Coordinate(x=0, y=1), # up, walk + jump
-                        Coordinate(x=0, y=-1), # down, walk + jump
-                        Coordinate(x=-1, y=0), # left, walk + jump
-                        Coordinate(x=1, y=0), # right, walk + jump
-                        Coordinate(x=-1, y=1), # up-left, walk
-                        Coordinate(x=1, y=1), # up-right, walk
-                        Coordinate(x=-1, y=-1), # down-left, walk
-                        Coordinate(x=1, y=-1), # down-right, walk
-                       )
 
     def respawn(self, player_location: Coordinate, m: Map) -> None:
         self.location = Coordinate(x=2, y=5)
 
-    def _is_alive(self, m: map) -> bool:
-        if not Map.out_of_bound(self.location):
-            return m.grids[self.location.y][self.location.x] == 1 # on platform
-        else:
-            return False
 
-    # a monster may walk/jump
-    def _valid_action(self, player_location: Coordinate, m: Map) -> list | None:
-        action = []
-
-        v = player_location - self.location # vector from monster to player
-        dist = [v.x*d.x + v.y*d.y for d in self._directions] # projection length of each direction
-        max_dist = max(dist) # max distance possible; priority: walk (+jump) > diagonal walk
-
-        while len(dist) > 0:
-            dir = dist.index(max_dist)
-            v = self.location + self._directions[dir]
-
-            if dir in range(4, 8): # diagonal
-                if m.grids[v.y][v.x] == 0: # if walk into lava
-                    dist.pop(dir)
-                else:
-                    action.append(self._directions[dir])
-                    dist.pop(dir)
-
-            else: # up / down / left / right
-                v_jump = v + self._directions[dir]
-                if m.grids[v.y][v.x] == 0 and m.grids[v_jump.y][v_jump.x] == 0: # if walk and jump into lava
-                    dist.pop(dir)
-                else:
-                    if m.grids[v_jump.y][v_jump.x] != 0: # if jump onto platform
-                        action.append(self._directions[dir] * 2)
-                        dist.pop(dir)
-
-                    if m.grids[v.y][v.x] != 0: # if also walk onto platform
-                        action.append(self._directions[dir])
-                        dist.pop(dir)
-
-            if len(action) > 0: # largest (solo) distance action possible
-                break
-
-            elif max_dist != max(dist): # look for second largest distance action
-                max_dist = max(dist)
-
-        if len(dist) == 0: # if no closest action to reach player
-            return None
-
-        return action
-
-    # deprecated if need not to return Status
-    def _dir_to_action(self, dir: Coordinate) -> Status:
-        if abs(dir.x) == 2 or abs(dir.y) == 2:
-            return super().jump(dir // 2)
-        else:
-            return super().walk(dir)
-
-    # to be rewritten
-    def _random_forward_action(self, m: Map) -> Status:
-        v = self.location + self._directions[0] * 2
-        if m.grids[v.y][v.x] == 1: # jump forward
-            return super().jump(self._directions[0])
-
-        v = self.location + self._directions[0]
-        if m.grids[v.y][v.x] == 1: # walk forward
-            return super().walk(self._directions[0])
-
-        v = self.location + self._directions[4]
-        if m.grids[v.y][v.x] == 1: # walk up-left
-            return super().walk(self._directions[4])
-
-        v = self.location + self._directions[5]
-        if m.grids[v.y][v.x] == 1: # walk up-right
-            return super().walk(self._directions[5])
-
-        return Status(False, 0)
-
-
-    # take a random action for the monster
-    # among all valid actions,
-    # prefer actions that can move the monster forward
-
-    # take an action that can direcly catch player, otherwise take the action to get closest to player
-    def step_old(self, player_location: Coordinate, m: Map) -> Status:
-        # if not self._is_alive(m): # if dropped into lava
-        #     self.respawn(player_location, m) # reset coordinate; possibly furthest behind player
-        #     return
-
-        action = self._valid_action(player_location, m)
-
-        if action is None: # no possible action
-            #self.location += {some_random_coord}
-            return self._random_forward_action(m)
-
-        elif len(action) == 1: # only 1 possible action
-            #self.location += action.pop()
-            return self._dir_to_action(action.pop())
-
-        # only (walk and/or jump) possible
-        # else: catch player directly if possible
-        for dir in action:
-            if (self.location + dir) == player_location: # if directly catch player
-                #self.location += dir
-                return self._dir_to_action(dir)
-
-        # else: get cloest to player
-        if action[0].y == 0: # horizontal
-            dir = min(action, key=lambda c: abs(player_location.x - (self.location.x + c.x)))
-            #self.location += dir
-            return self._dir_to_action(dir)
-        else: # vertical
-            dir = min(action, key=lambda c: abs(player_location.y - (self.location.y + c.y)))
-            #self.location += dir
-            return self._dir_to_action(dir)
-        
-    
     def step(self, p: Coordinate, m: Map) -> None:
-        for d in self.__DIRECTIONS:
+        # kill if dropped into lava by player
+        if not self.is_alive(m):
+            self.location = OFF_SCREEN
+
+        for d in self._DIRECTIONS:
             if (self.location + d) == p: # if directly catch player
                 self.location += d
                 return
-            
+
+        v = p - self.location
         best_actions = sorted(
-            self.__DIRECTIONS,
-            key=lambda t: t.x*p.x + t.y*p.y,    # maximize dot product
+            self._DIRECTIONS,
+            key=lambda t: t.x*v.x + t.y*v.y,    # maximize dot product
             reverse=True)
-        
+
         for a in best_actions:
             target = self.location + a
-            if m.grids[target.y][target.x] != 0:
+            if m.grids[target.y][target.x] != 0: # select action that get closest to player
                 self.location = target
                 return
-        
+
+        # otherwise, kill monster
         self.location = OFF_SCREEN
 
 
@@ -473,14 +359,14 @@ class Playground:
     # 16-19: jump (up down left right)
     # 20: freezer, 21: redbull
 
-    def __init__(self) -> None:
+    def __init__(self, monster_respawn=3) -> None:
         self.map = Map()
         self.player = Player(Coordinate(x=MAP_WIDTH//2, y=MAP_HEIGHT//2))
-        self.monster = Monster(Coordinate(x=2, y=9))
-        
+        self.monster = Monster()
+
         # after monster died, takes a while until monster respawns
-        self.RESPAWN = 3
-        self.respawn_cooldown = self.RESPAWN
+        self.MONSTER_RESPAWN = monster_respawn
+        self.monster_respawn_cooldown = self.MONSTER_RESPAWN
 
         self.score = 0
 
@@ -558,12 +444,15 @@ class Playground:
 
     @property
     def is_player_alive(self) -> bool:
-        return (self.map.grids[self.player.location.y][self.player.location.x] == 1) and \
+        return self.player.is_alive(self.map) and \
                not (self.player.location == self.monster.location) # on platform & not caught by monster
 
 
     def play(self, action: int) -> Status:
+        # player action
         # match case can't match range yet
+        used_freezer = False
+        used_redbull = False
         if action in range(0, 7+1):
             s = self.player.walk(self._action_to_direction[action], self.map)
         elif action in range(8, 15+1):
@@ -572,35 +461,53 @@ class Playground:
             s = self.player.jump(self._action_to_direction[action-16], self.map)
         elif action == 20:
             s = self.player.freezer(self.map)
+            used_freezer = s.success # may be a spammed use
         elif action == 21:
             s = self.player.redbull(self.map)
+            used_redbull = s.success
         else:
             raise ValueError("Unknown Action")
 
+
+        if not used_freezer:
+            if self.player.freezer_cooldown == 0:
+                self.player.freezer_cooldown = 0 # capped at 0 if player did not use
+            else: # countdown started
+                self.player.freezer_cooldown -= 1
+
+        if not used_redbull:
+            if self.player.redbull_cooldown == 0:
+                self.player.redbull_cooldown = 0
+            else:
+                self.player.redbull_cooldown -= 1
+
+
+        # player kill himself
         if not self.is_player_alive:
             return Status(False, -10)
 
-    
-        if Map.out_of_bound(self.monster.location):
-            self.respawn_cooldown -= 1
-        else:
-            self.respawn_cooldown = self.RESPAWN
-        
-        # if monster spawned in this round, don't step it 
-        spawned = False     
-        if self.respawn_cooldown == 0:
-            spawned = True 
-            # TODO: place monster on screen
-        
-        if not spawned:
-            pass
-            # self.monster.step(self.player.location, self.map)
-        
+        # decrease spawn cooldown
+        if Map.out_of_bound(self.monster.location): # not yet spawned
+            self.monster_respawn_cooldown -= 1
+
+        # if monster spawned in this round, don't step it
+        if self.monster_respawn_cooldown == 0: # spawned new monster
+            self.monster_respawn_cooldown = self.MONSTER_RESPAWN # reset cooldown
+            self.monster.respawn(self.player.location, self.map)
+
+        elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # cooldown already reset, i.e., monster already spawned
+            self.monster.step(self.player.location, self.map)
+
+        # if player is caught by monster
         if not self.is_player_alive:
            return Status(False, -10)
 
         self.score += s.score
         print(f"Player: {self.player.location.coord(index=False)} | Monster: {self.monster.location.coord(index=False)}")
+        print(f"Freezer cooldown: {self.player.freezer_cooldown} | Redbull cooldown: {self.player.redbull_cooldown}")
+        if Map.out_of_bound(self.monster.location):
+            print(f"Monster respawned in {self.monster_respawn_cooldown} rounds")
+        print("----")
         return s
 
     def _get_slice(self):
@@ -616,34 +523,35 @@ class Playground:
     @property
     def render_state(self):
         ploc, mloc = self.player.location, self.monster.location    # alias
-        
+
+        # player location
         if ploc.y < MAP_HEIGHT // 2:
             player_coord = Coordinate(x=ploc.x, y=MAP_HEIGHT - 1 - ploc.y)
         else:
             player_coord = Coordinate(x=ploc.x, y=MAP_HEIGHT//2)
 
-
+        # monster location
         if ploc.y <= MAP_HEIGHT //2: # around start of the map
             if mloc.y <= MAP_HEIGHT - 1:
                 monster_coord = Coordinate(x=mloc.x, y=(MAP_HEIGHT - 1) - mloc.y)
             else:
                 monster_coord = OFF_SCREEN
-    
+
         else:   # after walking far
             if abs(mloc.y - ploc.y) <= MAP_HEIGHT // 2: # must be around player
                 monster_coord = Coordinate(
                     x=mloc.x,
-                    y=(MAP_HEIGHT - 1) - (MAP_HEIGHT // 2 + (mloc.y - ploc.y)) 
+                    y=(MAP_HEIGHT - 1) - (MAP_HEIGHT // 2 + (mloc.y - ploc.y))
                     ) # offset from centre
             else:
                 monster_coord = OFF_SCREEN
-            
-            
+
+
         return RenderState(
             player_loc=player_coord,
             monster_loc=monster_coord,
-            freezer=self.player.FREEZER_COOLDOWN,
-            redbull=self.player.REDBULL_COOLDOWN,
+            freezer=self.player.freezer_cooldown,
+            redbull=self.player.redbull_cooldown,
             slice=self._get_slice(),
         )
 
@@ -749,7 +657,7 @@ class Window:
             )
 
 
-        if not Map.out_of_bound(s.monster):
+        if not Map.out_of_bound(s.monster_loc):
             self.game_surface.blit(
                 self.monster_image,
                 self.monster_image.get_rect(
@@ -827,7 +735,7 @@ class MainEnv(gym.Env):
 
         terminated = (status.score == -10)
         truncated = (self.step_count >= self.trunc)
-        
+
         info = {
             "step_count": self.step_count,
             "score": self.playground.score
