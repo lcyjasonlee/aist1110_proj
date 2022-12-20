@@ -43,6 +43,8 @@ keys_to_action = {
 
 # make coordinates objects for better readability,
 # handles coordinate operations too
+
+# right = +x, up = +y
 class Coordinate:
     x_max, y_max = MAP_WIDTH-1, MAP_HEIGHT-1
 
@@ -106,7 +108,7 @@ class Coordinate:
         else:
             raise ValueError("Coordinate Order Not Specified")
 
-
+OFF_SCREEN = Coordinate(x=-1, y=-1)
 
 class Map:
     """
@@ -292,6 +294,24 @@ class Player(Entity):
 
 
 class Monster(Entity):
+    
+    __DIRECTIONS = (
+                        Coordinate(x=0, y=1), # up, walk
+                        Coordinate(x=0, y=-1), # down, walk
+                        Coordinate(x=-1, y=0), # left, walk
+                        Coordinate(x=1, y=0), # right, walk
+                        
+                        Coordinate(x=0, y=2), # up, jump
+                        Coordinate(x=0, y=-2), # down, jump
+                        Coordinate(x=-2, y=0), # left, jump
+                        Coordinate(x=2, y=0), # right, jump
+                        
+                        Coordinate(x=-1, y=1), # up-left, walk
+                        Coordinate(x=1, y=1), # up-right, walk
+                        Coordinate(x=-1, y=-1), # down-left, walk
+                        Coordinate(x=1, y=-1), # down-right, walk
+                       )
+    
     def __init__(self, coordinate = Coordinate(x=MAP_WIDTH//2 - 1, y=MAP_HEIGHT//2 - 1)):
         Entity.__init__(self, coordinate)
 
@@ -310,14 +330,17 @@ class Monster(Entity):
         self.location = Coordinate(x=2, y=5)
 
     def _is_alive(self, m: map) -> bool:
-        return m.grids[self.location.y][self.location.x] == 1 # on platform
+        if not Map.out_of_bound(self.location):
+            return m.grids[self.location.y][self.location.x] == 1 # on platform
+        else:
+            return False
 
     # a monster may walk/jump
     def _valid_action(self, player_location: Coordinate, m: Map) -> list | None:
         action = []
 
         v = player_location - self.location # vector from monster to player
-        dist = [v.dot_product(dir) for dir in self._directions] # projection length of each direction
+        dist = [v.x*d.x + v.y*d.y for d in self._directions] # projection length of each direction
         max_dist = max(dist) # max distance possible; priority: walk (+jump) > diagonal walk
 
         while len(dist) > 0:
@@ -388,10 +411,10 @@ class Monster(Entity):
     # prefer actions that can move the monster forward
 
     # take an action that can direcly catch player, otherwise take the action to get closest to player
-    def step(self, player_location: Coordinate, m: Map) -> Status:
-        if not self._is_alive(m): # if dropped into lava
-            self.respawn(player_location, m) # reset coordinate; possibly furthest behind player
-            return
+    def step_old(self, player_location: Coordinate, m: Map) -> Status:
+        # if not self._is_alive(m): # if dropped into lava
+        #     self.respawn(player_location, m) # reset coordinate; possibly furthest behind player
+        #     return
 
         action = self._valid_action(player_location, m)
 
@@ -419,9 +442,29 @@ class Monster(Entity):
             dir = min(action, key=lambda c: abs(player_location.y - (self.location.y + c.y)))
             #self.location += dir
             return self._dir_to_action(dir)
+        
+    
+    def step(self, p: Coordinate, m: Map) -> None:
+        for d in self.__DIRECTIONS:
+            if (self.location + d) == p: # if directly catch player
+                self.location += d
+                return
+            
+        best_actions = sorted(
+            self.__DIRECTIONS,
+            key=lambda t: t.x*p.x + t.y*p.y,    # maximize dot product
+            reverse=True)
+        
+        for a in best_actions:
+            target = self.location + a
+            if m.grids[target.y][target.x] != 0:
+                self.location = target
+                return
+        
+        self.location = OFF_SCREEN
 
 
-State = namedtuple("State", ["player", "monster", "freezer", "redbull", "slice"])
+RenderState = namedtuple("RenderState", ["player_loc", "monster_loc", "freezer", "redbull", "slice"])
 
 class Playground:
 
@@ -433,7 +476,11 @@ class Playground:
     def __init__(self) -> None:
         self.map = Map()
         self.player = Player(Coordinate(x=MAP_WIDTH//2, y=MAP_HEIGHT//2))
-        self.monster = Monster(Coordinate(x=2, y=5))
+        self.monster = Monster(Coordinate(x=2, y=9))
+        
+        # after monster died, takes a while until monster respawns
+        self.RESPAWN = 3
+        self.respawn_cooldown = self.RESPAWN
 
         self.score = 0
 
@@ -531,18 +578,29 @@ class Playground:
             raise ValueError("Unknown Action")
 
         if not self.is_player_alive:
-            self.score -= 10
             return Status(False, -10)
 
-        # TODO: ask monster to play after player
-        # monster may kill player
-        #if not self.is_player_alive:
-        #    self.score -= 10
-        #    return Status(False, -10)
-
-        self.monster.step(self.player.location, self.map)
+    
+        if Map.out_of_bound(self.monster.location):
+            self.respawn_cooldown -= 1
+        else:
+            self.respawn_cooldown = self.RESPAWN
+        
+        # if monster spawned in this round, don't step it 
+        spawned = False     
+        if self.respawn_cooldown == 0:
+            spawned = True 
+            # TODO: place monster on screen
+        
+        if not spawned:
+            pass
+            # self.monster.step(self.player.location, self.map)
+        
+        if not self.is_player_alive:
+           return Status(False, -10)
 
         self.score += s.score
+        print(f"Player: {self.player.location.coord(index=False)} | Monster: {self.monster.location.coord(index=False)}")
         return s
 
     def _get_slice(self):
@@ -554,27 +612,36 @@ class Playground:
 
 
     # used for rendering
-    # using pygame coordinates
+    # output is in pygame coordinates
     @property
-    def state_render(self):
-        if self.player.location.y < MAP_HEIGHT // 2:
-            player_coord = Coordinate(x=self.player.location.x, y=MAP_HEIGHT - 1 - self.player.location.y)
+    def render_state(self):
+        ploc, mloc = self.player.location, self.monster.location    # alias
+        
+        if ploc.y < MAP_HEIGHT // 2:
+            player_coord = Coordinate(x=ploc.x, y=MAP_HEIGHT - 1 - ploc.y)
         else:
-            player_coord = Coordinate(x=self.player.location.x, y=MAP_HEIGHT//2)
+            player_coord = Coordinate(x=ploc.x, y=MAP_HEIGHT//2)
 
-        # vert. distance from player to monster
-        monster_dy = self.monster.location.y - self.player.location.y
-        if abs(monster_dy) <= MAP_HEIGHT // 2:
-            if self.player.location.y < MAP_HEIGHT // 2:
-                monster_coord = Coordinate(x=self.monster.location.x, y=(MAP_HEIGHT - 1 - self.player.location.y) - monster_dy)
+
+        if ploc.y <= MAP_HEIGHT //2: # around start of the map
+            if mloc.y <= MAP_HEIGHT - 1:
+                monster_coord = Coordinate(x=mloc.x, y=(MAP_HEIGHT - 1) - mloc.y)
             else:
-                monster_coord = Coordinate(x=self.monster.location.x, y=MAP_HEIGHT//2 - monster_dy)
-        else:
-            monster_coord = None # absent from screen
-
-        return State(
-            player=player_coord,
-            monster=monster_coord,
+                monster_coord = OFF_SCREEN
+    
+        else:   # after walking far
+            if abs(mloc.y - ploc.y) <= MAP_HEIGHT // 2: # must be around player
+                monster_coord = Coordinate(
+                    x=mloc.x,
+                    y=(MAP_HEIGHT - 1) - (MAP_HEIGHT // 2 + (mloc.y - ploc.y)) 
+                    ) # offset from centre
+            else:
+                monster_coord = OFF_SCREEN
+            
+            
+        return RenderState(
+            player_loc=player_coord,
+            monster_loc=monster_coord,
             freezer=self.player.FREEZER_COOLDOWN,
             redbull=self.player.REDBULL_COOLDOWN,
             slice=self._get_slice(),
@@ -591,16 +658,15 @@ class Playground:
     # player xy, monster xy, freezer&redbull cooldown,
     # then $(MAP_HEIGHT) numbers representing rows
     @property
-    def state_rl(self) -> tuple:
-        s = self.state_render
+    def rl_state(self) -> tuple:
+        s = self.render_state
         return (
-            *s.player.coord(index=False),
-            *s.monster.coord(index=False),
+            *s.player_loc.coord(index=False),
+            *s.monster_loc.coord(index=False),
             s.freezer,
             s.redbull,
             *[self._binary(i) for i in s.slice]
         )
-
 
 
 class Window:
@@ -645,7 +711,7 @@ class Window:
         if self.fps is not None:
             self.clock.tick(self.fps)
 
-        s = self.playground.state_render
+        s = self.playground.render_state
 
         # draw grids of lava / platform
         for i in range(MAP_HEIGHT):
@@ -665,22 +731,41 @@ class Window:
                             self.platform_lip_image.get_rect(topleft=topleft)
                             )
                 else: # platform
-                    self.game_surface.blit(self.platform_image, self.platform_image.get_rect(topleft=topleft))
+                    self.game_surface.blit(
+                        self.platform_image,
+                        self.platform_image.get_rect(topleft=topleft)
+                    )
 
 
-        self.game_surface.blit(self.player_image,
-            self.player_image.get_rect(center=((s.player.x+0.5) * self.GRID_SIZE,
-                                               (s.player.y+0.5) * self.GRID_SIZE - self.GRID_SIZE//3))
-                              )
+        # offset grid size // 3 to center the sprite
+        self.game_surface.blit(
+            self.player_image,
+            self.player_image.get_rect(
+                center=(
+                    (s.player_loc.x+0.5) * self.GRID_SIZE,
+                    (s.player_loc.y+0.5) * self.GRID_SIZE - self.GRID_SIZE//3
+                    )
+                )
+            )
 
 
-        if s.monster is not None:
-            self.game_surface.blit(self.monster_image,
-                self.monster_image.get_rect(center=((s.monster.x+0.5) * self.GRID_SIZE,
-                                                    (s.monster.y+0.5) * self.GRID_SIZE - self.GRID_SIZE//3))
-                                  )
+        if not Map.out_of_bound(s.monster):
+            self.game_surface.blit(
+                self.monster_image,
+                self.monster_image.get_rect(
+                    center=(
+                        (s.monster_loc.x+0.5) * self.GRID_SIZE,
+                        (s.monster_loc.y+0.5) * self.GRID_SIZE - self.GRID_SIZE//3
+                        )
+                    )
+                )
 
-        self.win.blit(self.game_surface, self.game_surface.get_rect(topleft=(0, self.STAT_HEIGHT * self.GRID_SIZE)))
+        self.win.blit(
+            self.game_surface,
+            self.game_surface.get_rect(
+                topleft=(0, self.STAT_HEIGHT * self.GRID_SIZE)
+                )
+            )
         self.win.blit(self.stat_surface, self.stat_surface.get_rect(topleft=(0, 0)))
 
         pygame.display.flip()
@@ -706,17 +791,22 @@ class MainEnv(gym.Env):
         self.window = Window(self.playground, self.fps)
 
         self.render_mode = render_mode
-        self.trunc = trunc  # truncate after $(trunc) scores
+        self.trunc = trunc  # truncate after $(trunc) steps
+        self.step_count = 0 # no. of steps taken, including invalid ones
 
 
     def reset(self, seed=None, options=None) -> tuple:
         super().reset(seed=seed)    # reset RNG
 
+        self.step_count = 0
         self.playground = Playground()
         self.window = Window(self.playground, self.fps)
 
-        observation = self.playground.state_rl()  # state is more than the map itself
-        info = dict()   # no extra info
+        observation = self.playground.rl_state()
+        info = {
+            "step_count": self.step_count,
+            "score": 0
+        }
 
         self._render_frame()
 
@@ -725,10 +815,10 @@ class MainEnv(gym.Env):
 
     def step(self, action) -> tuple:
 
-        # TODO: step code + assign variables below
+        self.step_count += 1
         status = self.playground.play(action)
 
-        observation = self.playground.state_rl()
+        observation = self.playground.rl_state()
 
         if status.success is False and status.score == 0:
             reward = -1
@@ -736,8 +826,12 @@ class MainEnv(gym.Env):
             reward = status.score
 
         terminated = (status.score == -10)
-        truncated = (self.playground.score >= 300)
-        info = dict()
+        truncated = (self.step_count >= self.trunc)
+        
+        info = {
+            "step_count": self.step_count,
+            "score": self.playground.score
+        }
 
         self._render_frame()
 
@@ -765,7 +859,7 @@ if __name__ == "__main__":
     win = Window(playground=playground, fps=15)
 
     running = True
-    s = Status(True, 0)
+    # s = Status(True, 0)
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
