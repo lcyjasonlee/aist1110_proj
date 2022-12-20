@@ -225,12 +225,14 @@ class Player(Entity):
 
 
     def walk(self, dir: Coordinate, m: Map) -> Status:
+        s = super().walk(dir)
         m.expand(dir.y)
-        return super().walk(dir)
+        return s
 
     def jump(self, dir: Coordinate, m: Map) -> Status:
+        s = super().jump(dir)
         m.expand(dir.y*2)
-        return super().jump(dir)
+        return s
 
     @property
     def has_freezer(self) -> bool:
@@ -305,53 +307,74 @@ class Monster(Entity):
                         Coordinate(x=1, y=-1), # down-right, walk
                        )
 
+
+    def _is_alive(self, m: map) -> bool:
+        return m.grids[self.location.y][self.location.x] == 1 # into lava
+
     # a monster may walk/jump
-    def valid_action(self) -> list:
-        pass
+    def _valid_action(self, player_location: Coordinate, m: Map) -> list | None:
+        action = []
+
+        v = player_location - self.location # vector from monster to player
+        dist = [v.dot_product(dir) for dir in self._directions] # list of distance travelled by each direction
+        max_dist = max(dist) # max distance possible
+
+        while len(dist) > 0:
+            dir = dist.index(max(dist))
+            v = self.location + self._directions[dir]
+
+            if dir in range(4, 8): # diagonal walk
+                if m.grids[v.y][v.x] == 0: # if into lava
+                    dist.pop(dir)
+                else:
+                    action.append(self._directions[dir])
+
+            else: # walk or jump
+                v_jump = self.location + self._directions[dir] * 2
+                if m.grids[v.y][v.x] == 0 and m.grids[v_jump.y][v_jump.x] == 0: # if walk and jump into lava
+                    dist.pop(dir)
+                else:
+                    if m.grids[v.y][v.x] != 0: # if walkable
+                        action.append(self._directions[dir])
+
+                    if m.grids[v_jump.y][v_jump.x] != 0: # if also jumpable
+                        action.append(self._directions[dir] * 2)
+
+            if len(action) == 0 and max_dist != max(dist): # largest distance action is impossible
+                max_dist = max(dist)
+            else:
+                break
+
+
+        if len(dist) == 0: # if no possible action to reach player
+            return None
+
+        return action
 
 
     # take a random action for the monster
     # among all valid actions,
     # prefer actions that can move the monster forward
 
-    # take to a direction to get closest to player, jump whenever possible
-    def step(self, player_location: Coordinate, m: Map) -> None:
-        if self.kill(m): # if player drops it into lava
+    # take a action that can direcly catch player if available, otherwise take the forwardmost action
+    def step(self, player_location: Coordinate, m: Map) -> Status:
+        if not self._is_alive(m): # if dropped into lava
+            self.location = Coordinate(x=-1, y=-1) # reset coordinate
             return
 
-        v = player_location - self.location # vector from monster to player
-        dist = [v.dot_product(dir) for dir in self._directions] # list of distance travelled by each direction
+        action = self._valid_action(player_location, m)
 
-        # better implementation to check walk vs jump, i.e., the case that jump over a gap of lava
-        while len(dist) > 0:
-            dir = dist.index(max(dist)) # direction with largest distance travelled
-            v = self.location + self._directions[dir]
-            if m.grids[v.y][v.x] == 0: # if into lava
-                dist.pop(dir)
-            else:
-                break
+        if action is None: # no possible action
+            return Status(False, 0)
 
-        if len(dist) == 0: # if no possible action to reach player
-            pass
+        for dir in action:
+            if (self.location + dir) == player_location: # if directly catch player
+                self.location += dir
+                return Status(True, dir.y)
 
-        if dir in range(0, 4):
-            d = self.location + self._directions[dir]*2 - player_location # distance after jumping if direction is jumpable
-            if (d.x <= 0 and d.y <= 0): # check if overjump
-                self.location += self._directions[dir] * 2 # jump
-            else:
-                self.location += self._directions[dir] # otherwise walk
-        else:
-            self.location += self._directions[dir] # walk diagonally
-
-        print(self.location.coord(index=False))
-
-
-    def kill(self, m: map) -> bool:
-        if m.grids[self.location.y][self.location.x] == 0: # into lava
-            self.location = Coordinate(x=-1, y=-1) # reset coordinate
-            return True
-
-        return False
+        dir = min(action, key=lambda c: min(abs(player_location.x - (self.location.x + c.x)), abs(player_location.y - (self.location.y + c.y))))
+        self.location += dir
+        return Status(True, dir.y)
 
 
 State = namedtuple("State", ["player", "monster", "freezer", "redbull", "slice"])
