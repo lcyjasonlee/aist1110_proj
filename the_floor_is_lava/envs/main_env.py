@@ -6,7 +6,12 @@ from collections import namedtuple
 
 #TODO:
 # Redbull teleporation
+# Initial platform generation
 # New platform generation
+# Difficulty control
+# Text display
+# Game sound
+
 
 # keyboard mapping
     # 0-7: walk (w/ action_to_direction)
@@ -253,8 +258,8 @@ class Player(Entity):
 
     # freeze platforms
     def freezer(self, m: Map) -> Status:
-        if not self.has_freezer:
-            return Status(False, 0)
+        #if not self.has_freezer:
+        #    return Status(False, 0)
 
         self.freezer_cooldown = self.FREEZER_RESET # reset cooldown
 
@@ -271,8 +276,8 @@ class Player(Entity):
 
 
     def redbull(self, m: Map) -> Status:
-        if not self.has_redbull:
-            return Status(False, 0)
+        #if not self.has_redbull:
+        #    return Status(False, 0)
 
         self.redbull_cooldown = self.REDBULL_RESET # reset countdown
 
@@ -355,7 +360,7 @@ class Monster(Entity):
         self.location = OFF_SCREEN
 
 
-RenderState = namedtuple("RenderState", ["player_loc", "monster_loc", "freezer", "redbull", "slice"])
+RenderState = namedtuple("RenderState", ["player_loc", "monster_loc", "freezer", "redbull", "slice", "score"])
 
 class Playground:
 
@@ -376,6 +381,17 @@ class Playground:
 
         self.score = 0
 
+        self._action_to_direction = (
+                                    Coordinate(x=0, y=1), # up
+                                    Coordinate(x=0, y=-1), # down
+                                    Coordinate(x=-1, y=0), # left
+                                    Coordinate(x=1, y=0), # right
+                                    Coordinate(x=-1, y=1), # up-left
+                                    Coordinate(x=1, y=1), # up-right
+                                    Coordinate(x=-1, y=-1), # down-left
+                                    Coordinate(x=1, y=-1), # down-right
+                                )
+
         # to be removed (
         self._key_to_action = {
                                 'w': 0, # up
@@ -394,17 +410,6 @@ class Playground:
         self.is_jump = False
         self.is_destroy = False
         # )
-
-        self._action_to_direction = (
-                                    Coordinate(x=0, y=1), # up
-                                    Coordinate(x=0, y=-1), # down
-                                    Coordinate(x=-1, y=0), # left
-                                    Coordinate(x=1, y=0), # right
-                                    Coordinate(x=-1, y=1), # up-left
-                                    Coordinate(x=1, y=1), # up-right
-                                    Coordinate(x=-1, y=-1), # down-left
-                                    Coordinate(x=1, y=-1), # down-right
-                                )
 
     # to be removed
     def key_to_action(self, key: pygame.key) -> None:
@@ -518,7 +523,7 @@ class Playground:
 
         self.set_tool_cooldown(used_freezer, used_redbull)
 
-        # player kill himself
+        # if player suicided
         if not self.is_player_alive:
             return Status(False, -10)
 
@@ -592,6 +597,7 @@ class Playground:
             freezer=self.player.freezer_cooldown,
             redbull=self.player.redbull_cooldown,
             slice=self._get_slice(),
+            score=self.score
         )
 
     @staticmethod
@@ -622,7 +628,7 @@ class Window:
     including sprites, map, score display, etc.
     """
 
-    font = pygame.font.get_fonts()
+    #font = pygame.font.get_fonts()
 
     def __init__(self, playground: Playground, fps:int|None) -> None:
         self.playground = playground
@@ -632,6 +638,7 @@ class Window:
         pygame.init()
         pygame.display.init()
         pygame.display.set_caption("The Floor is Lava")
+        pygame.font.init()
 
         self.fps = fps
 
@@ -643,7 +650,8 @@ class Window:
 
         self.game_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.MAP_HEIGHT * self.GRID_SIZE))
         self.stat_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.STAT_HEIGHT * self.GRID_SIZE))
-        self.stat_surface.fill("darkorange2") # background colour
+
+        self.font = pygame.font.Font('freesansbold.ttf', 16)
 
         self.lava_image = pygame.image.load("assets/lava.png").convert()
         self.platform_image = pygame.image.load("assets/platform.png").convert()
@@ -653,15 +661,8 @@ class Window:
 
         self.clock = pygame.time.Clock()
 
-
-
-    # most of the rendering belongs to here
-    def draw(self) -> None:
-
-        if self.fps is not None:
-            self.clock.tick(self.fps)
-
-        s = self.playground.render_state
+    # drawing gameplay area
+    def draw_game(self, s: RenderState) -> None:
 
         # draw grids of lava / platform
         for i in range(self.MAP_HEIGHT):
@@ -711,13 +712,42 @@ class Window:
                     )
                 )
 
+    # EXPERIMENTAL
+    # drawing stat bar on top
+    def draw_stat(self, s: RenderState) -> None:
+        freezer_text = self.font.render(f"Freezer: {s.freezer} steps", True, "white")
+        redbull_rext = self.font.render(f"Redbull: {s.redbull} steps", True, "white")
+        score_text = self.font.render(f"{s.score}", True, "white")
+
+        self.stat_surface.fill("darkorange1") # background colour
+        self.stat_surface.blit(freezer_text, freezer_text.get_rect(topleft=(4, 4)))
+        self.stat_surface.blit(redbull_rext, redbull_rext.get_rect(topleft=(4, 4 + self.GRID_SIZE)))
+        self.stat_surface.blit(score_text, score_text.get_rect(topleft=((self.MAP_WIDTH - 2)*self.GRID_SIZE, 8 + self.GRID_SIZE)))
+
+
+    # most of the rendering belongs to here
+    def draw(self) -> None:
+
+        if self.fps is not None:
+            self.clock.tick(self.fps)
+
+        s = self.playground.render_state
+        self.draw_game(s)
+        self.draw_stat(s)
+
         self.win.blit(
             self.game_surface,
             self.game_surface.get_rect(
                 topleft=(0, self.STAT_HEIGHT * self.GRID_SIZE)
                 )
             )
-        self.win.blit(self.stat_surface, self.stat_surface.get_rect(topleft=(0, 0)))
+
+        self.win.blit(
+            self.stat_surface,
+            self.stat_surface.get_rect(
+                topleft=(0, 0)
+                )
+            )
 
         pygame.display.flip()
 
