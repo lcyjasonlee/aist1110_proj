@@ -5,14 +5,6 @@ from itertools import product
 from functools import reduce
 from collections import namedtuple
 
-#TODO:
-# Redbull teleporation
-# Initial platform generation
-# New platform generation
-# Difficulty control
-# Text display
-# Game sound
-
 
 # keyboard mapping
     # 0-7: walk (w/ action_to_direction)
@@ -20,31 +12,31 @@ from collections import namedtuple
     # 16-19: jump (w/ action_to_direction)
     # 20: freezer, 21: redbull
 keys_to_action = {
-    ("w", "8"): 0, # walk; up
-    ("s", "2"): 1, # walk; down
-    ("a", "4"): 2, # walk; left
-    ("d", "6"): 3, # walk; right
-    ("q", "7"): 4, # walk; up-left
-    ("e", "9"): 5, # walk; up-right
-    ("z", "1"): 6, # walk; down-left
-    ("c", "3"): 7, # walk; down-right
+    ('w', '8'): 0, # walk; up
+    ('s', '2'): 1, # walk; down
+    ('a', '4'): 2, # walk; left
+    ('d', '6'): 3, # walk; right
+    ('q', '7'): 4, # walk; up-left
+    ('e', '9'): 5, # walk; up-right
+    ('z', '1'): 6, # walk; down-left
+    ('c', '3'): 7, # walk; down-right
 
-    ("kw", "k8"): 8, # destroy; up
-    ("ks", "k2"): 9, # destroy; down
-    ("ka", "k4"): 10, # destroy; left
-    ("kd", "k6"): 11, # destroy; right
-    ("kq", "k7"): 12, # destroy; up-left
-    ("ke", "k9"): 13, # destroy; up-right
-    ("kz", "k1"): 14, # destroy; down-left
-    ("kc", "k3"): 15, # destroy; down-right
+    ('kw', '.8'): 8, # destroy; up
+    ('ks', '.2'): 9, # destroy; down
+    ('ka', '.4'): 10, # destroy; left
+    ('kd', '.6'): 11, # destroy; right
+    ('kq', '.7'): 12, # destroy; up-left
+    ('ke', '.9'): 13, # destroy; up-right
+    ('kz', '.1'): 14, # destroy; down-left
+    ('kc', '.3'): 15, # destroy; down-right
 
-    (" w", " 8", " jw", "j8"): 16, # jump; up
-    (" s", " 2", "js", "j2"): 17, # jump; down
-    (" a", " 4", "ja", "j4"): 18, # jump; left
-    (" d", " 6", "jd", "j6"): 19, # jump; right
+    (' w', '08'): 16, # jump; up
+    (' s', '02'): 17, # jump; down
+    (' a', '04'): 18, # jump; left
+    (' d', '06'): 19, # jump; right
 
-    "l": 20, # freezer
-    ";": 21, # redbull
+    ('f', '*'): 20, # freezer
+    ('r', '-'): 21, # redbull
 
 }
 
@@ -116,11 +108,11 @@ class Map:
 
         self.MAP_WIDTH = map_width
         self.MAP_HEIGHT = map_height
-        self.grids = [[0 for i in range(self.MAP_WIDTH)] for j in range(self.MAP_HEIGHT)] # actual map
+        self.grids = [] # actual map
 
     def out_of_bound(self, c: Coordinate) -> bool:
         return c.x < 0 or c.x >= self.MAP_WIDTH or c.y < 0
-    
+
     def is_lava(self, c: Coordinate) -> bool:
         if not self.out_of_bound(c):
             return self.grids[c.y][c.x] == 0
@@ -132,12 +124,12 @@ class Map:
     # a = P(a particular row being blank)
     # use player location as seed, deterministic
     def expand(self, r: int, a: int, seed: tuple) -> None:
-        rng = np.random.default_rng(seed=seed) 
-        
+        rng = np.random.default_rng(seed=seed)
+
         ac = 1 - a
         # avg % of platforms on a row
         p = r / (ac**3 + 2*a*(ac**2) + (a**2)*ac)
-        
+
         rows = np.zeros((3, self.MAP_WIDTH))
         for i in range(3):
             if rng.random() > a:
@@ -156,6 +148,7 @@ DEAD_STATUS = Status(False, -10)
 
 
 class Entity:
+
     DIRECTIONS = (
         Coordinate(x=0, y=1), # up, walk
         Coordinate(x=0, y=-1), # down, walk
@@ -172,7 +165,7 @@ class Entity:
         Coordinate(x=-1, y=-1), # down-left, walk
         Coordinate(x=1, y=-1), # down-right, walk
     )
-    
+
     def __init__(self, start_loc: Coordinate):
         self.location = start_loc
 
@@ -212,20 +205,20 @@ class Entity:
 
 
 class Player(Entity):
-    def __init__(self, coordinate, max_freeze=3, freezer_reset=7, redbull_reset=10):
+    def __init__(self, coordinate, freezer_reset, redbull_reset):
 
         Entity.__init__(self, coordinate)
 
-        self.max_freeze = max_freeze
+        self.max_freeze = 3
 
-        _iter1= range(-max_freeze, max_freeze+1)
-        _iter2 = range(-max_freeze, max_freeze+1)
+        _iter1= range(-self.max_freeze, self.max_freeze+1)
+        _iter2 = range(-self.max_freeze, self.max_freeze+1)
 
         # manhattan distance
         self.can_freeze = [
             Coordinate(x=i, y=j)
             for i, j in product(_iter1, _iter2)
-            if abs(i)+abs(j) <= max_freeze
+            if abs(i)+abs(j) <= self.max_freeze
             and not (i == 0 and j == 0)
             ]
 
@@ -234,8 +227,8 @@ class Player(Entity):
 
         self.REDBULL_RESET = redbull_reset
         self.redbull_cooldown = self.REDBULL_RESET
-    
-    
+
+
     def destroy(self, dir: Coordinate, m: Map) -> None:
         target = self.location + dir
 
@@ -259,10 +252,9 @@ class Player(Entity):
     # freeze platforms
     def freezer(self, m: Map) -> Status:
         if not self.has_freezer:
-           return Status(False, 0)
-
+           return INVALID_STATUS
         self.freezer_cooldown = self.FREEZER_RESET # reset cooldown
-        
+
         for freeze_coord in self.can_freeze:
             coord = self.location + freeze_coord
             if not m.out_of_bound(coord): # only freeze what's possible
@@ -272,18 +264,16 @@ class Player(Entity):
         return Status(True, 0)
 
 
-    def redbull(self, m: Map) -> Status:
+    def redbull(self, m: Map, range: int) -> Status:
         if not self.has_redbull:
-           return Status(False, 0)
+           return INVALID_STATUS
 
         self.redbull_cooldown = self.REDBULL_RESET # reset countdown
 
         # TODO: better way to select new platform
-        MAP_WIDTH = 9
-        MAP_HEIGHT = 15
-        x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0,MAP_HEIGHT-1)
-        while m.grids[y][x] == 0 or (x, y) == (self.location.x, self.location.y): # lava | current pos
-            x, y = np.random.randint(0, MAP_WIDTH-1), np.random.randint(0, MAP_HEIGHT-1)
+        x, y = np.random.randint(0, len(m.grids[0])-1), np.random.randint(self.location.y+range//2, self.location.y+range)
+        while m.is_lava(Coordinate(x=x, y=y)) or (x, y) == self.location.coord(index=False): # lava | current pos
+            x, y = np.random.randint(0, len(m.grids[0])-1), np.random.randint(self.location.y+range//2, self.location.y+range)
 
         dy = y - self.location.y
         self.location = Coordinate(x=x, y=y)
@@ -298,19 +288,19 @@ class Monster(Entity):
 
 
     def respawn(self, player_location: Coordinate, m: Map) -> None:
-        
+
         rng = np.random.default_rng(seed=player_location.coord(index=False))
-        
+
         # spawn as low as possible
-        for i in range(-m.MAP_HEIGHT//2, m.MAP_HEIGHT//2 + 1):
+        for i in range(-m.MAP_HEIGHT//2+1, m.MAP_HEIGHT//2 + 1):
             spawn_y = i + player_location.y
-            
+
             if not m.out_of_bound(Coordinate(x=0, y=spawn_y)):
                 possible_x = list(filter(
                     lambda x: not m.is_lava(Coordinate(x=x, y=spawn_y)),
                     range(m.MAP_WIDTH)
                 ))
-                
+
                 if possible_x:
                     spawn_x = rng.choice(possible_x)
                     self.location = Coordinate(x=spawn_x, y=spawn_y)
@@ -321,9 +311,9 @@ class Monster(Entity):
         # kill if dropped into lava by player
         if not self.is_alive(m):
             self.location = OFF_SCREEN
-        
+
         v = p - self.location
-        
+
         if v in self.DIRECTIONS:  # if directly catches player
             self.location = p
             return
@@ -331,7 +321,7 @@ class Monster(Entity):
         # find action closest to vector from monster to player
         # by maximizing dot product,
         # prefer actions that reach further (i.e. jump > walk)
-        
+
         best_actions = sorted(
             self.DIRECTIONS,
             key=lambda t: t.x*v.x + t.y*v.y,
@@ -343,7 +333,7 @@ class Monster(Entity):
                 if m.grids[target.y][target.x] != 0:
                     self.location = target
                     return
-        
+
         # kill monster when no path available
         self.location = OFF_SCREEN
 
@@ -354,26 +344,55 @@ RenderState = namedtuple(
 )
 
 class Playground:
+    _difficulty_to_var = {
+        0: {"initial_platform_size": 7, "r": 0.45, "a": 0.15, "monster_respawn": 5, "freezer_reset": 5, "redbull_reset": 7,},
+        1: {"initial_platform_size": 5, "r": 0.4, "a": 0.2, "monster_respawn": 3, "freezer_reset": 7, "redbull_reset": 10,},
+        2: {"initial_platform_size": 5, "r": 0.3, "a": 0.25, "monster_respawn": 1, "freezer_reset": 7, "redbull_reset": 15,}
+    }
+    # 0: Easy (meant to be very easy)
+    # 1: Medium (current)
+    # 2: Hard (meant to be very difficult, may require freezer at start or even consecutively)
 
-    def __init__(self, map_width, map_height, monster_respawn=3) -> None:
-        self.difficulty = None
+    def __init__(self, map_width, map_height, difficulty) -> None:
+        self.difficulty = difficulty
 
-        self.MAP_WIDTH = map_width # to be link with difficulty
-        self.MAP_HEIGHT = map_height # to be link with difficulty
+        self.MAP_WIDTH = map_width
+        self.MAP_HEIGHT = map_height
         self.map = Map(self.MAP_WIDTH, self.MAP_HEIGHT)
-        
-        # generate initial platforms
-        self.init_platform_size = self.MAP_WIDTH // 2 + 1
-        for j in range(self.MAP_HEIGHT//2 - self.init_platform_size//2, self.MAP_HEIGHT):
-            for i in range(self.MAP_WIDTH//2 - self.init_platform_size//2, self.MAP_WIDTH//2 + self.init_platform_size//2 + 1):
+
+        # size of initial platforms at centre
+        self.init_platform_size = self._difficulty_to_var[self.difficulty]["initial_platform_size"]
+        self.p_per_platform = self._difficulty_to_var[difficulty]["r"]
+        self.p_blank_row = self._difficulty_to_var[difficulty]["a"]
+
+        centre = Coordinate(x=self.MAP_WIDTH//2, y=self.MAP_HEIGHT//2)
+
+        for i in range(self.MAP_HEIGHT // 3 + 1): # fill the starting grids with random platforms
+            self.map.expand(
+                            r=self.p_per_platform,
+                            a=0,
+                            seed=(np.random.randint(centre.x - self.init_platform_size // 2, centre.x + self.init_platform_size // 2), \
+                                  np.random.randint(centre.y - self.init_platform_size // 2, centre.y + self.init_platform_size // 2))
+                                 )
+
+        # put platforms at centre
+        for j in range(centre.y - self.init_platform_size//2, centre.y + self.init_platform_size//2 + 1):
+            for i in range(centre.x - self.init_platform_size//2, centre.x + self.init_platform_size//2 + 1):
                 self.map.grids[j][i] = 1
 
-        self.player = Player(Coordinate(x=self.MAP_WIDTH//2, y=self.MAP_HEIGHT//2))
+        self.player = Player(
+                             coordinate=centre,
+                             freezer_reset=self._difficulty_to_var[difficulty]["freezer_reset"],
+                             redbull_reset=self._difficulty_to_var[difficulty]["redbull_reset"]
+                            ) # player always spawn at centre
+
         self.monster = Monster()
-        self.monster.respawn(self.player.location, self.map)
+
+        if self.difficulty != 0: # Easy: Monster will not spawn at start
+            self.monster.respawn(self.player.location, self.map)
 
         # after monster died, takes a while until monster respawns
-        self.MONSTER_RESPAWN = monster_respawn # to be link with difficulty
+        self.MONSTER_RESPAWN = self._difficulty_to_var[self.difficulty]["monster_respawn"] # to be link with difficulty
         self.monster_respawn_cooldown = self.MONSTER_RESPAWN
 
         self.score = 0
@@ -400,8 +419,8 @@ class Playground:
                                 'z': 6, # down-left
                                 'c': 7, # down-right
                                 'space': 8, # jump
-                                'l': 9, # freezer
-                                ';': 10, # redbull
+                                'f': 9, # freezer
+                                'r': 10, # redbull
                                 'k': 11, # destroy
                             }
         self.is_jump = False
@@ -462,7 +481,7 @@ class Playground:
     @property
     def map_exhausted(self) -> bool:
         return (len(self.map.grids) - self.player.location.y) <= self.map.MAP_HEIGHT // 2
-    
+
     def play(self, action: int) -> Status:
         # player action
         used_freezer = False
@@ -472,24 +491,25 @@ class Playground:
         # 8-15: destroy
         # 16-19: jump (up down left right)
         # 20: freezer, 21: redbull
-        
+
         if action in range(0, 7+1):
             s = self.player.walk(self._action_to_direction[action], self.map)
-        
+
         elif action in range(8, 15+1):
             s = self.player.destroy(self._action_to_direction[action-8], self.map)
-        
+
         elif action in range(16, 19+1):
             s = self.player.jump(self._action_to_direction[action-16], self.map)
-        
+
         elif action == 20:
             s = self.player.freezer(self.map)
             used_freezer = True
-        
+
         elif action == 21:
-            s = self.player.redbull(self.map)
+            s = self.player.redbull(self.map, self.MAP_HEIGHT // 2)
+            self.monster_respawn_cooldown == self.MONSTER_RESPAWN
             used_redbull = True
-        
+
         else:
             raise ValueError("Unknown Action")
 
@@ -497,20 +517,20 @@ class Playground:
         # e.g. using tools before cooldown finished
         if s == INVALID_STATUS:
             return s
-        
+
         while self.map_exhausted:
             self.map.expand(
-                r=0.4,
-                a=0.2,
+                r=self.p_per_platform,
+                a=self.p_blank_row,
                 seed=self.player.location.coord(index=False)
             )
-        
-        # don't decrement cooldown 
+
+        # don't decrement cooldown
         # if just sucessfully used a tool this round
         # (as cooldown has just been reset)
         if not used_freezer and self.player.freezer_cooldown > 0:
             self.player.freezer_cooldown -= 1
-            
+
         if not used_redbull and self.player.redbull_cooldown > 0:
             self.player.redbull_cooldown -= 1
 
@@ -530,13 +550,13 @@ class Playground:
 
         elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # monster already spawned
             self.monster.step(self.player.location, self.map)
-            
+
         # if player is caught by monster
         if not self.is_player_alive:
            return DEAD_STATUS
 
         self.score += s.score
-        
+
         # kill monster if its too far away from player
         if self.player.location.y - self.monster.location.y > round(self.map.MAP_HEIGHT * 0.7) :
             self.monster.location = OFF_SCREEN
@@ -639,15 +659,18 @@ class Window:
         self.game_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.MAP_HEIGHT * self.GRID_SIZE))
         self.stat_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.STAT_HEIGHT * self.GRID_SIZE))
 
-        self.font = pygame.font.Font('freesansbold.ttf', 16)
+        self.font = pygame.font.Font('assets/font.ttf', 16)
+        self.font2 = pygame.font.Font('assets/font.ttf', 32)
 
         self.lava_image = pygame.image.load("assets/lava.png").convert()
+
         self.platform_image = pygame.image.load("assets/platform.png").convert()
         self.platform_lip_image = pygame.image.load("assets/platform_lip.png").convert_alpha()
         self.player_image = pygame.image.load("assets/player.png").convert_alpha()
         self.monster_image = pygame.image.load("assets/monster.png").convert_alpha()
 
         self.clock = pygame.time.Clock()
+
 
     # drawing gameplay area
     def draw_game(self, s: RenderState) -> None:
@@ -662,13 +685,13 @@ class Window:
                     self.game_surface.blit(
                         self.lava_image,
                         self.lava_image.get_rect(topleft=topleft)
-                        )
+                    )
                     # draw front side of platform if there is platform above
                     if i-1 >= 0 and s.slice[i-1][j] == 1:
                         self.game_surface.blit(
                             self.platform_lip_image,
                             self.platform_lip_image.get_rect(topleft=topleft)
-                            )
+                        )
                 else: # platform
                     self.game_surface.blit(
                         self.platform_image,
@@ -703,14 +726,24 @@ class Window:
     # EXPERIMENTAL
     # drawing stat bar on top
     def draw_stat(self, s: RenderState) -> None:
-        freezer_text = self.font.render(f"Freezer: {s.freezer} steps", True, "white")
-        redbull_rext = self.font.render(f"Redbull: {s.redbull} steps", True, "white")
-        score_text = self.font.render(f"{s.score}", True, "white")
 
-        self.stat_surface.fill("darkorange1") # background colour
+        freezer_text = self.font.render(f"Freezer: {s.freezer} steps", False, "white")
+        redbull_rext = self.font.render(f"Redbull: {s.redbull} steps", False, "white")
+        score_text = self.font2.render(f"{s.score}", False, "white")
+
+        for i in range(self.STAT_HEIGHT):
+            for j in range(self.MAP_WIDTH):
+
+                topleft = (j*self.GRID_SIZE, i*self.GRID_SIZE)
+
+                self.stat_surface.blit(
+                    self.lava_image,
+                    self.lava_image.get_rect(topleft=topleft)
+                )
+
         self.stat_surface.blit(freezer_text, freezer_text.get_rect(topleft=(4, 4)))
         self.stat_surface.blit(redbull_rext, redbull_rext.get_rect(topleft=(4, 4 + self.GRID_SIZE)))
-        self.stat_surface.blit(score_text, score_text.get_rect(topleft=((self.MAP_WIDTH - 2)*self.GRID_SIZE, 8 + self.GRID_SIZE)))
+        self.stat_surface.blit(score_text, score_text.get_rect(topleft=((self.MAP_WIDTH - 1.5)*self.GRID_SIZE, self.GRID_SIZE * 0.5)))
 
 
     # most of the rendering belongs to here
@@ -743,7 +776,7 @@ class Window:
 class MainEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 15}
 
-    def __init__(self, map_width=9, map_height=15, render_mode=None, fps=None, trunc=300) -> None:
+    def __init__(self, map_width=9, map_height=15, difficulty=0, render_mode=None, fps=None, trunc=300) -> None:
 
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
@@ -756,7 +789,8 @@ class MainEnv(gym.Env):
         # actual game
         self.MAP_WIDTH = map_width
         self.MAP_HEIGHT = map_height
-        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT)
+        self.difficulty = difficulty
+        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty)
 
         # objects for rendering
         self.fps = fps
@@ -771,7 +805,7 @@ class MainEnv(gym.Env):
         super().reset(seed=seed)    # reset RNG
 
         self.step_count = 0
-        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT)
+        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty)
         self.window = Window(self.playground, self.fps)
 
         observation = self.playground.rl_state()
@@ -827,7 +861,7 @@ class MainEnv(gym.Env):
 
 if __name__ == "__main__":
 
-    playground = Playground(map_width=9, map_height=15)
+    playground = Playground(map_width=9, map_height=15, difficulty=1)
     win = Window(playground=playground, fps=15)
 
     running = True
