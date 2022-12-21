@@ -140,11 +140,14 @@ class Map:
         # may generate a chunk of new rows rather than row-by-row
         return [[0, 0, 1, 1, 1, 1, 1, 0, 0]]
 
-    def out_of_bound(self, c: Coordinate):
+    def out_of_bound(self, c: Coordinate) -> bool:
         return c.x < 0 or c.x >= self.MAP_WIDTH or c.y < 0
     
-    def is_lava(self, c: Coordinate):
-        return self.grids[c.y][c.x] == 0
+    def is_lava(self, c: Coordinate) -> bool:
+        if not self.out_of_bound(c):
+            return self.grids[c.y][c.x] == 0
+        else:
+            return False
 
 
 # score = score given to player
@@ -252,26 +255,23 @@ class Player(Entity):
 
     # freeze platforms
     def freezer(self, m: Map) -> Status:
-        #if not self.has_freezer:
-        #    return Status(False, 0)
+        if not self.has_freezer:
+           return Status(False, 0)
 
         self.freezer_cooldown = self.FREEZER_RESET # reset cooldown
 
-        count = 0
         for freeze_coord in self.can_freeze:
             coord = self.location + freeze_coord
             if not m.out_of_bound(coord): # only freeze what's possible
                 if m.is_lava(coord):
                     m.grids[coord.y][coord.x] = 1
-                    count += 1
 
-        # using freezer when it has no effect = failure
-        return Status(bool(count), 0)
+        return Status(True, 0)
 
 
     def redbull(self, m: Map) -> Status:
-        #if not self.has_redbull:
-        #    return Status(False, 0)
+        if not self.has_redbull:
+           return Status(False, 0)
 
         self.redbull_cooldown = self.REDBULL_RESET # reset countdown
 
@@ -313,6 +313,7 @@ class Monster(Entity):
 
 
     def respawn(self, player_location: Coordinate, m: Map) -> None:
+        # TODO: respawn monster around player
         self.location = Coordinate(x=2, y=5)
 
 
@@ -453,7 +454,7 @@ class Playground:
         return not self.map.out_of_bound(self.monster.location)
 
 
-    def set_tool_cooldown(self, used_freezer, used_redbull) -> None:
+    def _set_tool_cooldown(self, used_freezer, used_redbull) -> None:
         if not used_freezer:
             if self.player.freezer_cooldown == 0:
                 self.player.freezer_cooldown = 0 # capped at 0 if player did not use
@@ -472,46 +473,45 @@ class Playground:
         used_freezer = False
         used_redbull = False
 
-        if self.play_mode == "human":
-            valid_action = True # check for human tool spamming
-
-        # match case can't match range yet
         # 0-7: walk (see action_to_direction)
         # 8-15: destroy
         # 16-19: jump (up down left right)
         # 20: freezer, 21: redbull
+        
         if action in range(0, 7+1):
             s = self.player.walk(self._action_to_direction[action], self.map)
+        
         elif action in range(8, 15+1):
             s = self.player.destroy(self._action_to_direction[action-8], self.map)
+        
         elif action in range(16, 19+1):
             s = self.player.jump(self._action_to_direction[action-16], self.map)
-
+        
         elif action == 20:
-            if not self.player.has_freezer:
-                if self.play_mode == "human":
-                    valid_action = False
-                s = INVALID_STATUS
-            else:
-                used_freezer = True
-                s = self.player.freezer(self.map)
-
+            s = self.player.freezer(self.map)
+            used_freezer = True
+        
         elif action == 21:
-            if not self.player.has_redbull:
-                if self.play_mode == "human":
-                    valid_action = False
-                s = INVALID_STATUS
-            else:
-                used_redbull = True
-                s = self.player.redbull(self.map)
-
+            s = self.player.redbull(self.map)
+            used_redbull = True
+        
         else:
             raise ValueError("Unknown Action")
 
+        # ignore no-ops
+        # e.g. using tools before cooldown finished
         if s == INVALID_STATUS:
             return
+        
+        # don't decrement cooldown 
+        # if just sucessfully used a tool this round
+        # (as cooldown has just been reset)
+        if not used_freezer and self.player.freezer_cooldown > 0:
+            self.player.freezer_cooldown -= 1
+            
+        if not used_redbull and self.player.redbull_cooldown > 0:
+            self.player.redbull_cooldown -= 1
 
-        self.set_tool_cooldown(used_freezer, used_redbull)
 
         # if player suicided
         if not self.is_player_alive:
@@ -528,7 +528,8 @@ class Playground:
             self.monster.respawn(self.player.location, self.map)
 
         elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # monster already spawned
-            self.monster.step(self.player.location, self.map)
+            # self.monster.step(self.player.location, self.map)
+            pass
 
         # if player is caught by monster
         if not self.is_player_alive:
