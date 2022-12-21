@@ -62,16 +62,13 @@ class Coordinate:
             self.x = x
             self.y = y
 
-
     # c: Coordinate object
     def __add__(self, c):
         newx, newy = self.x + c.x, self.y + c.y
         return Coordinate(x=newx, y=newy)
 
-
     def __sub__(self, c):
         return self + c*(-1)
-
 
     def __mul__(self, op: int|float):
         EPSILON = 0.01
@@ -83,17 +80,14 @@ class Coordinate:
         else:
             return Coordinate(x=newx_int, y=newy_int)
 
-
     def __truediv__(self, op: int|float):
         return self * (1 / op)
-
 
     def __floordiv__(self, op: int):
         return Coordinate(
             x=int(self.x // op),
             y=int(self.y // op)
             )
-
 
     def __eq__(self, c) -> bool:
         return (self.x == c.x) and (self.y == c.y)
@@ -148,12 +142,17 @@ class Map:
 
     def out_of_bound(self, c: Coordinate):
         return c.x < 0 or c.x >= self.MAP_WIDTH or c.y < 0
+    
+    def is_lava(self, c: Coordinate):
+        return self.grids[c.y][c.x] == 0
 
 
 # score = score given to player
 # success + score determines reward
 # e.g. even if score = 0, can still have -ve reward
 Status = namedtuple("Status", ["success", "score"])
+INVALID_STATUS = Status(False, 0)   # failed but no penalty
+DEAD_STATUS = Status(False, -10)
 
 
 class Entity:
@@ -167,50 +166,33 @@ class Entity:
         newloc = self.location + dir
 
         if m.out_of_bound(newloc):
-            return Status(False, 0)
+            return INVALID_STATUS
         else:
             self.location = newloc
-            return Status(True, dir.y)
+            if m.is_lava(self.location):
+                return DEAD_STATUS
+            else:
+                return Status(True, dir.y)
 
     # can jump 2 platforms to up/down/left/right, but not diagonal
     def jump(self, dir: Coordinate, m: Map) -> Status:
         newloc = self.location + dir * 2
 
         if m.out_of_bound(newloc):
-            return Status(False, 0)
+            return INVALID_STATUS
         else:
             self.location = newloc
-            return Status(True, dir.y * 2)
-
-    def destroy(self, dir: Coordinate, m: Map) -> None:
-        target = self.location + dir
-
-        if m.out_of_bound(target):
-            return Status(False, 0)
-
-        if m.grids[target.y][target.x] == 0:
-            return Status(False, 0)
-        else:
-            m.grids[target.y][target.x] = 0
-            return Status(True, 0)
+            if m.is_lava(self.location):
+                return DEAD_STATUS
+            else:
+                return Status(True, dir.y * 2)
 
 
     def is_alive(self, m: map) -> bool:
         if not m.out_of_bound(self.location):
-            return m.grids[self.location.y][self.location.x] == 1 # on platform
+            return not m.is_lava(self.location) # on platform
         else:
             return False
-
-
-    # have valid path = have ways to advance to the next row
-    # including walking sideways
-
-    # return if valid path exist,
-    # and x coordinate of a reachable platform on the next row
-
-    # look for forward walk/jump first,
-    def have_valid_path(self, m: Map) -> Status:
-       pass
 
 
 class Player(Entity):
@@ -247,6 +229,18 @@ class Player(Entity):
         s = super().jump(dir, m)
         m.expand(dir.y*2)
         return s
+    
+    def destroy(self, dir: Coordinate, m: Map) -> None:
+        target = self.location + dir
+
+        if m.out_of_bound(target):
+            return INVALID_STATUS
+
+        if m.grids[target.y][target.x] == 0:
+            return INVALID_STATUS
+        else:
+            m.grids[target.y][target.x] = 0
+            return Status(True, 0)
 
     @property
     def has_freezer(self) -> bool:
@@ -267,7 +261,7 @@ class Player(Entity):
         for freeze_coord in self.can_freeze:
             coord = self.location + freeze_coord
             if not m.out_of_bound(coord): # only freeze what's possible
-                if m.grids[coord.y][coord.x] == 0:
+                if m.is_lava(coord):
                     m.grids[coord.y][coord.x] = 1
                     count += 1
 
@@ -293,18 +287,6 @@ class Player(Entity):
         m.expand(dy)
 
         return Status(True, dy)
-
-
-    # a player may walk, jump, use freezer,
-    # freezer has cooldown
-    # def valid_walk(self, map: Map) -> set:
-    #    result = set()
-
-    #    for action, c in enumerate(action_to_direction):
-    #         target = self.location + c
-    #         if Map.out_of_bound(target):
-    #             if map.map[target.y][target.x] == 1:
-    #                 result.add(action)
 
 
 class Monster(Entity):
@@ -338,29 +320,37 @@ class Monster(Entity):
         # kill if dropped into lava by player
         if not self.is_alive(m):
             self.location = OFF_SCREEN
-
-        for d in self._DIRECTIONS:
-            if (self.location + d) == p: # if directly catch player
-                self.location += d
-                return
-
+        
         v = p - self.location
+        
+        if v in self._DIRECTIONS:  # if directly catches player
+            self.location = p
+            return
+
+        # find action closest to vector from monster to player
+        # by maximizing dot product,
+        # prefer actions that reach further (i.e. jump > walk)
+        
         best_actions = sorted(
             self._DIRECTIONS,
-            key=lambda t: t.x*v.x + t.y*v.y,    # maximize dot product
+            key=lambda t: t.x*v.x + t.y*v.y,
             reverse=True)
 
         for a in best_actions:
             target = self.location + a
-            if m.grids[target.y][target.x] != 0: # select action that get closest to player
-                self.location = target
-                return
-
-        # otherwise, kill monster
+            if not m.out_of_bound(target):
+                if m.grids[target.y][target.x] != 0:
+                    self.location = target
+                    return
+        
+        # kill monster when no path available
         self.location = OFF_SCREEN
 
 
-RenderState = namedtuple("RenderState", ["player_loc", "monster_loc", "freezer", "redbull", "slice", "score"])
+RenderState = namedtuple(
+    "RenderState",
+    ["player_loc", "monster_loc", "freezer", "redbull", "slice", "score"]
+)
 
 class Playground:
 
@@ -501,7 +491,7 @@ class Playground:
             if not self.player.has_freezer:
                 if self.play_mode == "human":
                     valid_action = False
-                s = Status(False, 0)
+                s = INVALID_STATUS
             else:
                 used_freezer = True
                 s = self.player.freezer(self.map)
@@ -510,7 +500,7 @@ class Playground:
             if not self.player.has_redbull:
                 if self.play_mode == "human":
                     valid_action = False
-                s = Status(False, 0)
+                s = INVALID_STATUS
             else:
                 used_redbull = True
                 s = self.player.redbull(self.map)
@@ -518,14 +508,14 @@ class Playground:
         else:
             raise ValueError("Unknown Action")
 
-        if self.play_mode == "human" and not valid_action:
+        if s == INVALID_STATUS:
             return
 
         self.set_tool_cooldown(used_freezer, used_redbull)
 
         # if player suicided
         if not self.is_player_alive:
-            return Status(False, -10)
+            return DEAD_STATUS
 
         # decrease spawn cooldown
         if not self.is_monster_spawned: # not yet spawned
@@ -542,7 +532,7 @@ class Playground:
 
         # if player is caught by monster
         if not self.is_player_alive:
-           return Status(False, -10)
+           return DEAD_STATUS
 
         self.score += s.score
 
