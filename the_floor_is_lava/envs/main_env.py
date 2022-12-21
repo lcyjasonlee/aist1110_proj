@@ -118,13 +118,6 @@ class Map:
         self.MAP_HEIGHT = map_height
         self.grids = [[0 for i in range(self.MAP_WIDTH)] for j in range(self.MAP_HEIGHT)] # actual map
 
-        # generate initial platforms
-        self.init_platform_size = 5
-        for j in range(self.MAP_HEIGHT//2 - self.init_platform_size//2, self.MAP_HEIGHT):
-            for i in range(self.MAP_WIDTH//2 - self.init_platform_size//2, self.MAP_WIDTH//2 + self.init_platform_size//2 + 1):
-                self.grids[j][i] = 1
-
-
     def out_of_bound(self, c: Coordinate) -> bool:
         return c.x < 0 or c.x >= self.MAP_WIDTH or c.y < 0
     
@@ -163,7 +156,7 @@ DEAD_STATUS = Status(False, -10)
 
 
 class Entity:
-    __DIRECTIONS = (
+    DIRECTIONS = (
         Coordinate(x=0, y=1), # up, walk
         Coordinate(x=0, y=-1), # down, walk
         Coordinate(x=-1, y=0), # left, walk
@@ -305,8 +298,23 @@ class Monster(Entity):
 
 
     def respawn(self, player_location: Coordinate, m: Map) -> None:
-        # TODO: respawn monster around player
-        self.location = Coordinate(x=2, y=5)
+        
+        rng = np.random.default_rng(seed=player_location.coord(index=False))
+        
+        # spawn as low as possible
+        for i in range(-m.MAP_HEIGHT//2, m.MAP_HEIGHT//2 + 1):
+            spawn_y = i + player_location.y
+            
+            if not m.out_of_bound(Coordinate(x=0, y=spawn_y)):
+                possible_x = list(filter(
+                    lambda x: not m.is_lava(Coordinate(x=x, y=spawn_y)),
+                    range(m.MAP_WIDTH)
+                ))
+                
+                if possible_x:
+                    spawn_x = rng.choice(possible_x)
+                    self.location = Coordinate(x=spawn_x, y=spawn_y)
+                    break
 
 
     def step(self, p: Coordinate, m: Map) -> None:
@@ -316,7 +324,7 @@ class Monster(Entity):
         
         v = p - self.location
         
-        if v in self.__DIRECTIONS:  # if directly catches player
+        if v in self.DIRECTIONS:  # if directly catches player
             self.location = p
             return
 
@@ -325,7 +333,7 @@ class Monster(Entity):
         # prefer actions that reach further (i.e. jump > walk)
         
         best_actions = sorted(
-            self.__DIRECTIONS,
+            self.DIRECTIONS,
             key=lambda t: t.x*v.x + t.y*v.y,
             reverse=True)
 
@@ -353,9 +361,16 @@ class Playground:
         self.MAP_WIDTH = map_width # to be link with difficulty
         self.MAP_HEIGHT = map_height # to be link with difficulty
         self.map = Map(self.MAP_WIDTH, self.MAP_HEIGHT)
+        
+        # generate initial platforms
+        self.init_platform_size = self.MAP_WIDTH // 2 + 1
+        for j in range(self.MAP_HEIGHT//2 - self.init_platform_size//2, self.MAP_HEIGHT):
+            for i in range(self.MAP_WIDTH//2 - self.init_platform_size//2, self.MAP_WIDTH//2 + self.init_platform_size//2 + 1):
+                self.map.grids[j][i] = 1
 
         self.player = Player(Coordinate(x=self.MAP_WIDTH//2, y=self.MAP_HEIGHT//2))
         self.monster = Monster()
+        self.monster.respawn(self.player.location, self.map)
 
         # after monster died, takes a while until monster respawns
         self.MONSTER_RESPAWN = monster_respawn # to be link with difficulty
@@ -445,7 +460,7 @@ class Playground:
         return not self.map.out_of_bound(self.monster.location)
 
     @property
-    def map_exausted(self) -> bool:
+    def map_exhausted(self) -> bool:
         return (len(self.map.grids) - self.player.location.y) <= self.map.MAP_HEIGHT // 2
     
     def play(self, action: int) -> Status:
@@ -483,11 +498,11 @@ class Playground:
         if s == INVALID_STATUS:
             return s
         
-        while self.map_exausted:
+        while self.map_exhausted:
             self.map.expand(
                 r=0.4,
                 a=0.2,
-                seed=self.player.location.coord(index=True)
+                seed=self.player.location.coord(index=False)
             )
         
         # don't decrement cooldown 
@@ -521,6 +536,10 @@ class Playground:
            return DEAD_STATUS
 
         self.score += s.score
+        
+        # kill monster if its too far away from player
+        if self.player.location.y - self.monster.location.y > round(self.map.MAP_HEIGHT * 0.7) :
+            self.monster.location = OFF_SCREEN
 
         print(f"Player: {self.player.location.coord(index=False)} | Monster: {self.monster.location.coord(index=False)}")
         print(f"Freezer cooldown: {self.player.freezer_cooldown} | Redbull cooldown: {self.player.redbull_cooldown}")
