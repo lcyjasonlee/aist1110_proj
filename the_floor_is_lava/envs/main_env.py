@@ -5,6 +5,14 @@ from itertools import product
 from functools import reduce
 from collections import namedtuple
 
+#TODO:
+# Redbull teleporation
+# Initial platform generation
+# New platform generation
+# Difficulty control
+# Text display
+# Game sound
+
 
 # keyboard mapping
     # 0-7: walk (w/ action_to_direction)
@@ -104,7 +112,7 @@ class Map:
     """
     handles map creation and path validation
     """
-    def __init__(self, map_width, map_height) -> None:
+    def __init__(self, map_width: int, map_height: int) -> None:
 
         self.MAP_WIDTH = map_width
         self.MAP_HEIGHT = map_height
@@ -205,7 +213,7 @@ class Entity:
 
 
 class Player(Entity):
-    def __init__(self, coordinate, freezer_reset, redbull_reset):
+    def __init__(self, coordinate: Coordinate, freezer_reset: int, redbull_reset: int):
 
         Entity.__init__(self, coordinate)
 
@@ -235,7 +243,7 @@ class Player(Entity):
         if m.out_of_bound(target):
             return INVALID_STATUS
 
-        if m.grids[target.y][target.x] == 0:
+        if m.is_lava(target):
             return INVALID_STATUS
         else:
             m.grids[target.y][target.x] = 0
@@ -253,6 +261,7 @@ class Player(Entity):
     def freezer(self, m: Map) -> Status:
         if not self.has_freezer:
            return INVALID_STATUS
+
         self.freezer_cooldown = self.FREEZER_RESET # reset cooldown
 
         for freeze_coord in self.can_freeze:
@@ -264,26 +273,26 @@ class Player(Entity):
         return Status(True, 0)
 
 
-    def redbull(self, m: Map, range: int) -> Status:
+    def redbull(self, m: Map, max_range: int) -> Status:
         if not self.has_redbull:
            return INVALID_STATUS
 
         self.redbull_cooldown = self.REDBULL_RESET # reset countdown
 
-        # TODO: better way to select new platform
-        x, y = np.random.randint(0, len(m.grids[0])-1), np.random.randint(self.location.y+range//2, self.location.y+range)
-        while m.is_lava(Coordinate(x=x, y=y)) or (x, y) == self.location.coord(index=False): # lava | current pos
-            x, y = np.random.randint(0, len(m.grids[0])-1), np.random.randint(self.location.y+range//2, self.location.y+range)
+        # teleport player randomly forward max_range//2 to max_range blocks, can be sideways
+        x, dy = np.random.randint(0, len(m.grids[0])-1), np.random.randint(max_range//2, max_range)
 
-        dy = y - self.location.y
-        self.location = Coordinate(x=x, y=y)
+        while m.is_lava(Coordinate(x=x, y=self.location.y + dy)):
+            x, dy = np.random.randint(0, len(m.grids[0])-1), np.random.randint(max_range//2, max_range)
+
+        self.location = Coordinate(x=x, y=self.location.y + dy)
 
         return Status(True, dy)
 
 
 class Monster(Entity):
 
-    def __init__(self, coordinate = Coordinate(x=-1, y=-1)):
+    def __init__(self, coordinate: Coordinate = Coordinate(x=-1, y=-1)):
         Entity.__init__(self, coordinate)
 
 
@@ -330,7 +339,7 @@ class Monster(Entity):
         for a in best_actions:
             target = self.location + a
             if not m.out_of_bound(target):
-                if m.grids[target.y][target.x] != 0:
+                if not m.is_lava(target):
                     self.location = target
                     return
 
@@ -349,11 +358,11 @@ class Playground:
         1: {"initial_platform_size": 5, "r": 0.4, "a": 0.2, "monster_respawn": 3, "freezer_reset": 7, "redbull_reset": 10,},
         2: {"initial_platform_size": 5, "r": 0.3, "a": 0.25, "monster_respawn": 1, "freezer_reset": 7, "redbull_reset": 15,}
     }
-    # 0: Easy (meant to be very easy)
-    # 1: Medium (current)
-    # 2: Hard (meant to be very difficult, may require freezer at start or even consecutively)
+    # 0: Easy (very easy)
+    # 1: Normal (current)
+    # 2: Hard (very difficult, may require freezer at start or even consecutively)
 
-    def __init__(self, map_width, map_height, difficulty) -> None:
+    def __init__(self, map_width: int, map_height: int, difficulty: int):
         self.difficulty = difficulty
 
         self.MAP_WIDTH = map_width
@@ -362,28 +371,28 @@ class Playground:
 
         # size of initial platforms at centre
         self.init_platform_size = self._difficulty_to_var[self.difficulty]["initial_platform_size"]
-        self.p_per_platform = self._difficulty_to_var[difficulty]["r"]
-        self.p_blank_row = self._difficulty_to_var[difficulty]["a"]
+        self.p_perc_platform = self._difficulty_to_var[self.difficulty]["r"]
+        self.p_blank_row = self._difficulty_to_var[self.difficulty]["a"]
 
         centre = Coordinate(x=self.MAP_WIDTH//2, y=self.MAP_HEIGHT//2)
 
         for i in range(self.MAP_HEIGHT // 3 + 1): # fill the starting grids with random platforms
             self.map.expand(
-                            r=self.p_per_platform,
+                            r=self.p_perc_platform,
                             a=0,
                             seed=(np.random.randint(centre.x - self.init_platform_size // 2, centre.x + self.init_platform_size // 2), \
                                   np.random.randint(centre.y - self.init_platform_size // 2, centre.y + self.init_platform_size // 2))
                                  )
 
-        # put platforms at centre
+        # spawn platforms at centre
         for j in range(centre.y - self.init_platform_size//2, centre.y + self.init_platform_size//2 + 1):
             for i in range(centre.x - self.init_platform_size//2, centre.x + self.init_platform_size//2 + 1):
                 self.map.grids[j][i] = 1
 
         self.player = Player(
                              coordinate=centre,
-                             freezer_reset=self._difficulty_to_var[difficulty]["freezer_reset"],
-                             redbull_reset=self._difficulty_to_var[difficulty]["redbull_reset"]
+                             freezer_reset=self._difficulty_to_var[self.difficulty]["freezer_reset"],
+                             redbull_reset=self._difficulty_to_var[self.difficulty]["redbull_reset"]
                             ) # player always spawn at centre
 
         self.monster = Monster()
@@ -407,6 +416,33 @@ class Playground:
                                     Coordinate(x=-1, y=-1), # down-left
                                     Coordinate(x=1, y=-1), # down-right
                                 )
+
+        # sound: either put here or moved to player / monster class
+        pygame.mixer.init()
+        # background music
+            # pygame.mixer.music.load("")
+            # pygame.mixer.music.play(loops=-1) # infinite loop
+
+        if False:
+            self.sounds = {
+                "player_walk": pygame.mixer.Sound(""),
+                "player_jump": pygame.mixer.Sound(""),
+                "player_destroy": pygame.mixer.Sound(""),
+                "player_freezer": pygame.mixer.Sound(""),
+                "freezer_reset": pygame.mixer.Sound(""),
+                "player_redbull": pygame.mixer.Sound(""),
+                "redbull_reset": pygame.mixer.Sound(""),
+                "player_die": pygame.mixer.Sound(""),
+
+                "monster_walk": pygame.mixer.Sound(""),
+                "monster_jump": pygame.mixer.Sound(""),
+                "monster_die": pygame.mixer.Sound(""),
+                "monster_respawn": pygame.mixer.Sound(""),
+            }
+
+        #for s in self.sounds:
+        #    self.sounds[s].set_volume(0.5)
+
 
         # to be removed (
         self._key_to_action = {
@@ -503,12 +539,21 @@ class Playground:
 
         elif action == 20:
             s = self.player.freezer(self.map)
-            used_freezer = True
+            if not s == INVALID_STATUS:
+                used_freezer = True
+            else:
+                # to be blitted
+                print(f"Freezer reset in {self.player.freezer_cooldown} steps")
 
         elif action == 21:
             s = self.player.redbull(self.map, self.MAP_HEIGHT // 2)
-            self.monster_respawn_cooldown == self.MONSTER_RESPAWN
-            used_redbull = True
+            if not s == INVALID_STATUS:
+                self.monster.location = OFF_SCREEN
+                self.monster_respawn_cooldown = 1 # immediate monster respawn
+                used_redbull = True
+            else:
+                # to be blitted
+                print(f"Redbull reset in {self.player.redbull_cooldown} steps")
 
         else:
             raise ValueError("Unknown Action")
@@ -520,7 +565,7 @@ class Playground:
 
         while self.map_exhausted:
             self.map.expand(
-                r=self.p_per_platform,
+                r=self.p_perc_platform,
                 a=self.p_blank_row,
                 seed=self.player.location.coord(index=False)
             )
@@ -536,6 +581,8 @@ class Playground:
 
         # if player suicided
         if not self.is_player_alive:
+            # to be blitted
+            print("Falls into lava!")
             return DEAD_STATUS
 
         # decrease spawn cooldown
@@ -553,7 +600,9 @@ class Playground:
 
         # if player is caught by monster
         if not self.is_player_alive:
-           return DEAD_STATUS
+            # to be blitted
+            print("Caught by monster!")
+            return DEAD_STATUS
 
         self.score += s.score
 
@@ -561,15 +610,17 @@ class Playground:
         if self.player.location.y - self.monster.location.y > round(self.map.MAP_HEIGHT * 0.7) :
             self.monster.location = OFF_SCREEN
 
+        # to be blitted
         print(f"Player: {self.player.location.coord(index=False)} | Monster: {self.monster.location.coord(index=False)}")
-        print(f"Freezer cooldown: {self.player.freezer_cooldown} | Redbull cooldown: {self.player.redbull_cooldown}")
-        if self.map.out_of_bound(self.monster.location):
-            print(f"Monster respawned in {self.monster_respawn_cooldown} rounds")
+        if not self.monster.is_alive:
+            print(f"Monster respawns in {self.monster_respawn_cooldown} steps")
+
         print("--------------------")
 
         return s
 
-    def _get_slice(self):
+
+    def _get_slice(self) -> list[list[int]]:
         centre = self.player.location.y
         if centre < self.MAP_HEIGHT // 2:
             return self.map.grids[:self.MAP_HEIGHT][::-1]
@@ -580,7 +631,7 @@ class Playground:
     # used for rendering
     # output is in pygame coordinates
     @property
-    def render_state(self):
+    def render_state(self) -> RenderState:
         ploc, mloc = self.player.location, self.monster.location    # alias
 
         # player location
@@ -636,9 +687,7 @@ class Window:
     including sprites, map, score display, etc.
     """
 
-    #font = pygame.font.get_fonts()
-
-    def __init__(self, playground: Playground, fps:int|None) -> None:
+    def __init__(self, playground: Playground, fps:int|None):
         self.playground = playground
         self.MAP_WIDTH = self.playground.MAP_WIDTH
         self.MAP_HEIGHT = self.playground.MAP_HEIGHT
@@ -659,20 +708,19 @@ class Window:
         self.game_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.MAP_HEIGHT * self.GRID_SIZE))
         self.stat_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.STAT_HEIGHT * self.GRID_SIZE))
 
-        self.font = pygame.font.Font('assets/font.ttf', 16)
-        self.font2 = pygame.font.Font('assets/font.ttf', 32)
-
         self.lava_image = pygame.image.load("assets/lava.png").convert()
-
         self.platform_image = pygame.image.load("assets/platform.png").convert()
         self.platform_lip_image = pygame.image.load("assets/platform_lip.png").convert_alpha()
         self.player_image = pygame.image.load("assets/player.png").convert_alpha()
         self.monster_image = pygame.image.load("assets/monster.png").convert_alpha()
 
+        self.font = pygame.font.Font('assets/font.ttf', 16)
+        self.score_font = pygame.font.Font('assets/font.ttf', 32)
+
         self.clock = pygame.time.Clock()
 
 
-    # drawing gameplay area
+    # draw gameplay area
     def draw_game(self, s: RenderState) -> None:
 
         # draw grids of lava / platform
@@ -723,14 +771,15 @@ class Window:
                     )
                 )
 
-    # EXPERIMENTAL
-    # drawing stat bar on top
+
+    # drawing statistics bar on top
     def draw_stat(self, s: RenderState) -> None:
 
         freezer_text = self.font.render(f"Freezer: {s.freezer} steps", False, "white")
         redbull_rext = self.font.render(f"Redbull: {s.redbull} steps", False, "white")
-        score_text = self.font2.render(f"{s.score}", False, "white")
+        score_text = self.score_font.render(f"{s.score}", False, "white")
 
+        # draw lava background
         for i in range(self.STAT_HEIGHT):
             for j in range(self.MAP_WIDTH):
 
@@ -741,9 +790,9 @@ class Window:
                     self.lava_image.get_rect(topleft=topleft)
                 )
 
-        self.stat_surface.blit(freezer_text, freezer_text.get_rect(topleft=(4, 4)))
-        self.stat_surface.blit(redbull_rext, redbull_rext.get_rect(topleft=(4, 4 + self.GRID_SIZE)))
-        self.stat_surface.blit(score_text, score_text.get_rect(topleft=((self.MAP_WIDTH - 1.5)*self.GRID_SIZE, self.GRID_SIZE * 0.5)))
+        self.stat_surface.blit(freezer_text, freezer_text.get_rect(topleft=(self.GRID_SIZE // 4, self.GRID_SIZE // 4)))
+        self.stat_surface.blit(redbull_rext, redbull_rext.get_rect(topleft=(self.GRID_SIZE // 4, self.GRID_SIZE // 4 + self.GRID_SIZE)))
+        self.stat_surface.blit(score_text, score_text.get_rect(top=self.GRID_SIZE // 2, right=(self.MAP_WIDTH - 0.5) * self.GRID_SIZE))
 
 
     # most of the rendering belongs to here
@@ -776,7 +825,7 @@ class Window:
 class MainEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 15}
 
-    def __init__(self, map_width=9, map_height=15, difficulty=0, render_mode=None, fps=None, trunc=300) -> None:
+    def __init__(self, map_width=9, map_height=15, difficulty=1, render_mode=None, fps=None, trunc=300) -> None:
 
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
@@ -856,6 +905,9 @@ class MainEnv(gym.Env):
 
     def close(self) -> None:
         if self.window is not None:
+            #pygame.mixer.music.stop()
+            pygame.mixer.quit()
+            pygame.display.quit()
             pygame.quit()
 
 
@@ -880,6 +932,10 @@ if __name__ == "__main__":
         win.draw()
 
         if not playground.is_player_alive:
+            print("Game over!")
             running = False
 
+    #pygame.mixer.music.stop()
+    pygame.mixer.quit()
+    pygame.display.quit()
     pygame.quit()
