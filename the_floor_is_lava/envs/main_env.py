@@ -2,6 +2,7 @@ import pygame
 import gym
 import numpy as np
 from itertools import product
+from functools import reduce
 from collections import namedtuple
 
 #TODO:
@@ -112,33 +113,17 @@ class Map:
     handles map creation and path validation
     """
     def __init__(self, map_width, map_height) -> None:
-        # the map maybe better stored by lists rather than ndarray,
-        # as the map grows as the player moves forward
 
-        # we may hardcode the first few rows
-        # and dynamically generate the rest
         self.MAP_WIDTH = map_width
         self.MAP_HEIGHT = map_height
         self.grids = [[0 for i in range(self.MAP_WIDTH)] for j in range(self.MAP_HEIGHT)] # actual map
 
-        # TODO: move this to playground
         # generate initial platforms
         self.init_platform_size = 5
         for j in range(self.MAP_HEIGHT//2 - self.init_platform_size//2, self.MAP_HEIGHT):
             for i in range(self.MAP_WIDTH//2 - self.init_platform_size//2, self.MAP_WIDTH//2 + self.init_platform_size//2 + 1):
                 self.grids[j][i] = 1
 
-
-    # append n new platforms to grids
-    def expand(self, n: int) -> None:
-        for i in range(n):
-            self.grids += self.gen_platform()
-
-    @staticmethod
-    def gen_platform() -> list[list[int]]:
-        #TODO: better way to generate new platforms
-        # may generate a chunk of new rows rather than row-by-row
-        return [[0, 0, 1, 1, 1, 1, 1, 0, 0]]
 
     def out_of_bound(self, c: Coordinate) -> bool:
         return c.x < 0 or c.x >= self.MAP_WIDTH or c.y < 0
@@ -148,6 +133,25 @@ class Map:
             return self.grids[c.y][c.x] == 0
         else:
             return False
+
+    # generate 3 rows at a time
+    # r = avg % of platforms on entire map
+    # a = P(a particular row being blank)
+    # use player location as seed, deterministic
+    def expand(self, r: int, a: int, seed: tuple) -> None:
+        rng = np.random.default_rng(seed=seed) 
+        
+        ac = 1 - a
+        # avg % of platforms on a row
+        p = r / (ac**3 + 2*a*(ac**2) + (a**2)*ac)
+        
+        rows = np.zeros((3, self.MAP_WIDTH))
+        for i in range(3):
+            if rng.random() > a:
+                rows[i] = rng.choice(2, size=self.MAP_WIDTH, p=(1-p, p))
+
+        self.grids += rows.tolist()
+
 
 
 # score = score given to player
@@ -159,7 +163,23 @@ DEAD_STATUS = Status(False, -10)
 
 
 class Entity:
+    __DIRECTIONS = (
+        Coordinate(x=0, y=1), # up, walk
+        Coordinate(x=0, y=-1), # down, walk
+        Coordinate(x=-1, y=0), # left, walk
+        Coordinate(x=1, y=0), # right, walk
 
+        Coordinate(x=0, y=2), # up, jump
+        Coordinate(x=0, y=-2), # down, jump
+        Coordinate(x=-2, y=0), # left, jump
+        Coordinate(x=2, y=0), # right, jump
+
+        Coordinate(x=-1, y=1), # up-left, walk
+        Coordinate(x=1, y=1), # up-right, walk
+        Coordinate(x=-1, y=-1), # down-left, walk
+        Coordinate(x=1, y=-1), # down-right, walk
+    )
+    
     def __init__(self, start_loc: Coordinate):
         self.location = start_loc
 
@@ -221,17 +241,7 @@ class Player(Entity):
 
         self.REDBULL_RESET = redbull_reset
         self.redbull_cooldown = self.REDBULL_RESET
-
-
-    def walk(self, dir: Coordinate, m: Map) -> Status:
-        s = super().walk(dir, m)
-        m.expand(dir.y)
-        return s
-
-    def jump(self, dir: Coordinate, m: Map) -> Status:
-        s = super().jump(dir, m)
-        m.expand(dir.y*2)
-        return s
+    
     
     def destroy(self, dir: Coordinate, m: Map) -> None:
         target = self.location + dir
@@ -259,7 +269,7 @@ class Player(Entity):
            return Status(False, 0)
 
         self.freezer_cooldown = self.FREEZER_RESET # reset cooldown
-
+        
         for freeze_coord in self.can_freeze:
             coord = self.location + freeze_coord
             if not m.out_of_bound(coord): # only freeze what's possible
@@ -284,29 +294,11 @@ class Player(Entity):
 
         dy = y - self.location.y
         self.location = Coordinate(x=x, y=y)
-        m.expand(dy)
 
         return Status(True, dy)
 
 
 class Monster(Entity):
-
-    _DIRECTIONS = (
-                        Coordinate(x=0, y=1), # up, walk
-                        Coordinate(x=0, y=-1), # down, walk
-                        Coordinate(x=-1, y=0), # left, walk
-                        Coordinate(x=1, y=0), # right, walk
-
-                        Coordinate(x=0, y=2), # up, jump
-                        Coordinate(x=0, y=-2), # down, jump
-                        Coordinate(x=-2, y=0), # left, jump
-                        Coordinate(x=2, y=0), # right, jump
-
-                        Coordinate(x=-1, y=1), # up-left, walk
-                        Coordinate(x=1, y=1), # up-right, walk
-                        Coordinate(x=-1, y=-1), # down-left, walk
-                        Coordinate(x=1, y=-1), # down-right, walk
-                       )
 
     def __init__(self, coordinate = Coordinate(x=-1, y=-1)):
         Entity.__init__(self, coordinate)
@@ -324,7 +316,7 @@ class Monster(Entity):
         
         v = p - self.location
         
-        if v in self._DIRECTIONS:  # if directly catches player
+        if v in self.__DIRECTIONS:  # if directly catches player
             self.location = p
             return
 
@@ -333,7 +325,7 @@ class Monster(Entity):
         # prefer actions that reach further (i.e. jump > walk)
         
         best_actions = sorted(
-            self._DIRECTIONS,
+            self.__DIRECTIONS,
             key=lambda t: t.x*v.x + t.y*v.y,
             reverse=True)
 
@@ -355,8 +347,7 @@ RenderState = namedtuple(
 
 class Playground:
 
-    def __init__(self, map_width, map_height, monster_respawn=3, play_mode = "human") -> None:
-        self.play_mode = play_mode
+    def __init__(self, map_width, map_height, monster_respawn=3) -> None:
         self.difficulty = None
 
         self.MAP_WIDTH = map_width # to be link with difficulty
@@ -453,21 +444,10 @@ class Playground:
     def is_monster_spawned(self) -> bool:
         return not self.map.out_of_bound(self.monster.location)
 
-
-    def _set_tool_cooldown(self, used_freezer, used_redbull) -> None:
-        if not used_freezer:
-            if self.player.freezer_cooldown == 0:
-                self.player.freezer_cooldown = 0 # capped at 0 if player did not use
-            else: # countdown started
-                self.player.freezer_cooldown -= 1
-
-        if not used_redbull:
-            if self.player.redbull_cooldown == 0:
-                self.player.redbull_cooldown = 0
-            else:
-                self.player.redbull_cooldown -= 1
-
-
+    @property
+    def map_exausted(self) -> bool:
+        return (len(self.map.grids) - self.player.location.y) <= self.map.MAP_HEIGHT // 2
+    
     def play(self, action: int) -> Status:
         # player action
         used_freezer = False
@@ -501,7 +481,14 @@ class Playground:
         # ignore no-ops
         # e.g. using tools before cooldown finished
         if s == INVALID_STATUS:
-            return
+            return s
+        
+        while self.map_exausted:
+            self.map.expand(
+                r=0.4,
+                a=0.2,
+                seed=self.player.location.coord(index=True)
+            )
         
         # don't decrement cooldown 
         # if just sucessfully used a tool this round
@@ -511,7 +498,6 @@ class Playground:
             
         if not used_redbull and self.player.redbull_cooldown > 0:
             self.player.redbull_cooldown -= 1
-
 
         # if player suicided
         if not self.is_player_alive:
@@ -528,9 +514,8 @@ class Playground:
             self.monster.respawn(self.player.location, self.map)
 
         elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # monster already spawned
-            # self.monster.step(self.player.location, self.map)
-            pass
-
+            self.monster.step(self.player.location, self.map)
+            
         # if player is caught by monster
         if not self.is_player_alive:
            return DEAD_STATUS
@@ -591,16 +576,9 @@ class Playground:
             score=self.score
         )
 
-    @staticmethod
-    def _binary(l: list) -> int:
-        result = 0
-        for index, element in enumerate(reversed(l)):
-            result += element * (2 ** index)
-        return result
-
     # return 1d vector state specifically for RL algo
     # player xy, monster xy, freezer&redbull cooldown,
-    # then $(MAP_HEIGHT) numbers representing rows
+    # then binary representation of rows
     @property
     def rl_state(self) -> tuple:
         s = self.render_state
@@ -609,7 +587,7 @@ class Playground:
             *s.monster_loc.coord(index=False),
             s.freezer,
             s.redbull,
-            *[self._binary(i) for i in s.slice]
+            *[reduce(lambda a,b: 2*a + b, i) for i in s.slice]
         )
 
 
@@ -759,7 +737,7 @@ class MainEnv(gym.Env):
         # actual game
         self.MAP_WIDTH = map_width
         self.MAP_HEIGHT = map_height
-        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, play_mode = self.render_mode)
+        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT)
 
         # objects for rendering
         self.fps = fps
@@ -774,7 +752,7 @@ class MainEnv(gym.Env):
         super().reset(seed=seed)    # reset RNG
 
         self.step_count = 0
-        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, play_mode = self.render_mode)
+        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT)
         self.window = Window(self.playground, self.fps)
 
         observation = self.playground.rl_state()
