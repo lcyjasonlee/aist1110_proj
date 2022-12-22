@@ -1,2 +1,29 @@
-pixelgamefont.tff
+Game font: pixelgamefont.tff
 https://www.dafont.com/pixelgamefont.font
+
+step
+https://freesound.org/people/deleted_user_5093904/sounds/268758/
+
+destroy
+https://freesound.org/people/Angel_Perez_Grandi/sounds/49190/
+
+freezer
+https://freesound.org/people/Foleyhaven/sounds/621138/
+
+freezer reset
+https://freesound.org/people/Relenzo2/sounds/160420/
+
+redbull
+https://freesound.org/people/GameAudio/sounds/220205/
+
+redbull reset
+https://freesound.org/people/hello_flowers/sounds/27426/
+
+monster respawn
+https://freesound.org/people/Michel88/sounds/76966/
+
+monster attack
+https://freesound.org/people/RedRoxPeterPepper/sounds/420251/
+
+player die
+https://freesound.org/people/ProjectsU012/sounds/333785/
