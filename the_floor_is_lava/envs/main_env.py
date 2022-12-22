@@ -419,25 +419,21 @@ class Playground:
             # pygame.mixer.music.load("")
             # pygame.mixer.music.play(loops=-1) # infinite loop
 
-        if False:
-            self.sounds = {
-                "player_walk": pygame.mixer.Sound(""),
-                "player_jump": pygame.mixer.Sound(""),
-                "player_destroy": pygame.mixer.Sound(""),
-                "player_freezer": pygame.mixer.Sound(""),
-                "freezer_reset": pygame.mixer.Sound(""),
-                "player_redbull": pygame.mixer.Sound(""),
-                "redbull_reset": pygame.mixer.Sound(""),
-                "player_die": pygame.mixer.Sound(""),
+        self.sounds = {
+            "player_walk": pygame.mixer.Sound("assets/footstep.wav"),
+            "player_jump": pygame.mixer.Sound("assets/footstep.wav"),
+            "player_destroy": pygame.mixer.Sound("assets/destroy.wav"),
+            "player_freezer": pygame.mixer.Sound("assets/freezer.flac"),
+            "freezer_reset": pygame.mixer.Sound("assets/freezer_reset.wav"),
+            "player_redbull": pygame.mixer.Sound("assets/redbull.wav"),
+            "redbull_reset": pygame.mixer.Sound("assets/redbull_reset.wav"),
+            "player_die": pygame.mixer.Sound("assets/player_die.wav"),
+            "monster_attack": pygame.mixer.Sound("assets/monster_attack.mp3"),
+            "monster_respawn": pygame.mixer.Sound("assets/monster_respawn.wav"),
+        }
 
-                "monster_walk": pygame.mixer.Sound(""),
-                "monster_jump": pygame.mixer.Sound(""),
-                "monster_die": pygame.mixer.Sound(""),
-                "monster_respawn": pygame.mixer.Sound(""),
-            }
-
-        #for s in self.sounds:
-        #    self.sounds[s].set_volume(0.5)
+        for s in self.sounds:
+            self.sounds[s].set_volume(0.5)
 
 
         # to be removed (
@@ -526,17 +522,24 @@ class Playground:
 
         if action in range(0, 7+1):
             s = self.player.walk(self._action_to_direction[action], self.map)
+            if not s == INVALID_STATUS:
+                self.sounds["player_walk"].play()
 
         elif action in range(8, 15+1):
             s = self.player.destroy(self._action_to_direction[action-8], self.map)
+            if not s == INVALID_STATUS:
+                self.sounds["player_destroy"].play()
 
         elif action in range(16, 19+1):
             s = self.player.jump(self._action_to_direction[action-16], self.map)
+            if not s == INVALID_STATUS:
+                self.sounds["player_jump"].play()
 
         elif action == 20:
             s = self.player.freezer(self.map)
             if not s == INVALID_STATUS:
                 used_freezer = True
+                self.sounds["player_freezer"].play()
             else:
                 return s, "freezer_reset"
 
@@ -546,6 +549,7 @@ class Playground:
                 self.monster.location = OFF_SCREEN
                 self.monster_respawn_cooldown = 1 # immediate monster respawn
                 used_redbull = True
+                self.sounds["player_redbull"].play()
             else:
                 return s, "redbull_reset"
 
@@ -571,13 +575,18 @@ class Playground:
         # (as cooldown has just been reset)
         if not used_freezer and self.player.freezer_cooldown > 0:
             self.player.freezer_cooldown -= 1
+            if self.player.freezer_cooldown == 0:
+                self.sounds["freezer_reset"].play()
 
         if not used_redbull and self.player.redbull_cooldown > 0:
             self.player.redbull_cooldown -= 1
+            if self.player.redbull_cooldown == 0:
+                self.sounds["redbull_reset"].play()
 
 
         # if player suicided
         if not self.is_player_alive:
+            self.sounds["player_die"].play()
             return DEAD_STATUS, "player_death1"
 
 
@@ -590,12 +599,14 @@ class Playground:
         if self.monster_respawn_cooldown == 0:
             self.monster_respawn_cooldown = self.MONSTER_RESPAWN
             self.monster.respawn(self.player.location, self.map)
+            self.sounds["monster_respawn"].play()
 
         elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # monster already spawned
             self.monster.step(self.player.location, self.map)
 
         # if player is caught by monster
         if not self.is_player_alive:
+            self.sounds["monster_attack"].play()
             return DEAD_STATUS, "player_death2"
 
         # update player's score
