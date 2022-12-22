@@ -6,11 +6,6 @@ from functools import reduce
 from collections import namedtuple
 
 
-# keyboard mapping
-    # 0-7: walk (w/ action_to_direction)
-    # 8-15: destroy (w/ action_to_direction)
-    # 16-19: jump (w/ action_to_direction)
-    # 20: freezer, 21: redbull
 keys_to_action = {
     ('w', '8'): 0, # walk; up
     ('s', '2'): 1, # walk; down
@@ -352,7 +347,7 @@ class Playground:
     }
     # 0: Easy (very easy)
     # 1: Normal (current)
-    # 2: Hard (very difficult, may require freezer at start or even consecutively)
+    # 2: Hard (very difficult, may require tools at start or even consecutively)
 
 
     def __init__(self, map_width: int, map_height: int, difficulty: int):
@@ -397,7 +392,7 @@ class Playground:
             self.monster.respawn(self.player.location, self.map)
 
         # after monster died, takes a while until monster respawns
-        self.MONSTER_RESPAWN = self._difficulty_to_var[self.difficulty]["monster_respawn"] # to be link with difficulty
+        self.MONSTER_RESPAWN = self._difficulty_to_var[self.difficulty]["monster_respawn"]
         self.monster_respawn_cooldown = self.MONSTER_RESPAWN
 
         self.score = 0
@@ -515,7 +510,7 @@ class Playground:
         used_freezer = False
         used_redbull = False
 
-        # 0-7: walk (see action_to_direction)
+        # 0-7: walk (up down left right up-left up-right down-left down-right)
         # 8-15: destroy
         # 16-19: jump (up down left right)
         # 20: freezer, 21: redbull
@@ -803,12 +798,11 @@ class Window:
         # draw lava background
         for i in range(self.STAT_HEIGHT):
             for j in range(self.MAP_WIDTH):
-
-                topleft = (j*self.GRID_SIZE, i*self.GRID_SIZE)
-
                 self.stat_surface.blit(
                     self.lava_image,
-                    self.lava_image.get_rect(topleft=topleft)
+                    self.lava_image.get_rect(
+                        topleft=(j*self.GRID_SIZE, i*self.GRID_SIZE)
+                        )
                 )
 
         self.stat_surface.blit(
@@ -833,6 +827,7 @@ class Window:
             )
 
 
+    # show game messages on screen, if any
     def print_msg(self, msg: str, s: RenderState, dt: int) -> None:
 
         # turn game message into text shown on screen
@@ -880,7 +875,7 @@ class Window:
 
         # decrease the countdown of each message, or remove it if countdown is over
         for msg in self._msg_queue:
-            if self._msg_countdown[msg]["countdown"] >= 0:
+            if self._msg_countdown[msg]["countdown"] > 0:
                 self._msg_countdown[msg]["countdown"] -= dt
             else:
                 self._msg_countdown[msg]["countdown"] = self._msg_countdown[msg]["DURATION"]
