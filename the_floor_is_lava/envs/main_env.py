@@ -366,7 +366,7 @@ class Playground:
 
         centre = Coordinate(x=self.MAP_WIDTH//2, y=self.MAP_HEIGHT//2)
 
-        for i in range(self.MAP_HEIGHT // 3 + 1): # fill the starting grids with random platforms
+        for i in range(round((self.MAP_HEIGHT + 0.55) / 3) + 1): # fill the starting grids with random platforms
             self.map.expand(
                             r=self.p_perc_platform,
                             a=0,
@@ -696,9 +696,6 @@ class Window:
         pygame.init()
         pygame.display.init()
         pygame.display.set_caption("The Floor is Lava")
-        pygame.font.init()
-
-        self.fps = fps
 
         self.GRID_SIZE = pygame.image.load("assets/lava.png").get_height()
         self.STAT_HEIGHT = 2
@@ -708,7 +705,7 @@ class Window:
 
         self.game_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.MAP_HEIGHT * self.GRID_SIZE))
         self.stat_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.STAT_HEIGHT * self.GRID_SIZE))
-        self.msg_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.MAP_HEIGHT // 2 * self.GRID_SIZE))
+        self.msg_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, 4 * self.GRID_SIZE))
         self.msg_surface.set_colorkey("gray")
 
         self.lava_image = pygame.image.load("assets/lava.png").convert()
@@ -717,6 +714,8 @@ class Window:
         self.player_image = pygame.image.load("assets/player.png").convert_alpha()
         self.monster_image = pygame.image.load("assets/monster.png").convert_alpha()
 
+
+        pygame.font.init()
         self.font = pygame.font.Font('assets/font.ttf', 16)
         self.font.set_bold(True)
         self.score_font = pygame.font.Font('assets/font.ttf', 32)
@@ -733,6 +732,7 @@ class Window:
 
         self._msg_queue = []
 
+        self.fps = fps
         self.clock = pygame.time.Clock()
 
 
@@ -791,10 +791,6 @@ class Window:
     # drawing statistics bar on top
     def draw_stat(self, s: RenderState) -> None:
 
-        freezer_text = self.font.render(f"Freezer: {s.freezer} steps", False, "white")
-        redbull_rext = self.font.render(f"Redbull: {s.redbull} steps", False, "white")
-        score_text = self.score_font.render(f"{s.score}", False, "white")
-
         # draw lava background
         for i in range(self.STAT_HEIGHT):
             for j in range(self.MAP_WIDTH):
@@ -805,6 +801,7 @@ class Window:
                         )
                 )
 
+        freezer_text = self.font.render(f"Freezer: {s.freezer} steps", False, "white")
         self.stat_surface.blit(
             freezer_text,
             freezer_text.get_rect(
@@ -812,6 +809,7 @@ class Window:
                 )
             )
 
+        redbull_rext = self.font.render(f"Redbull: {s.redbull} steps", False, "white")
         self.stat_surface.blit(
             redbull_rext,
             redbull_rext.get_rect(
@@ -819,6 +817,7 @@ class Window:
                 )
             )
 
+        score_text = self.score_font.render(f"{s.score}", False, "white")
         self.stat_surface.blit(
             score_text,
             score_text.get_rect(
@@ -833,19 +832,34 @@ class Window:
         # turn game message into text shown on screen
         def msg_to_text() -> pygame.font.Font:
             if msg == "freezer_reset":
-                return self.msg_font.render(f"Freezer resets in {s.freezer} steps", False, "white")
+                return self.msg_font.render(
+                    f"Freezer resets in {s.freezer} {'steps' if s.freezer > 1 else 'step'}",
+                    False, "white"
+                )
 
             if msg == "redbull_reset":
-                return self.msg_font.render(f"Redbull resets in {s.redbull} steps", False, "white")
+                return self.msg_font.render(
+                    f"Redbull resets in {s.redbull} {'steps' if s.redbull > 1 else 'step'}",
+                    False, "white"
+                )
 
             if msg == "monster_respawn":
-                return self.msg_font.render(f"Monster respawns in {s.monster_respawn} steps", False, "white")
+                return self.msg_font.render(
+                    f"Monster respawns in {s.monster_respawn} {'steps' if s.monster_respawn > 1 else 'step'}",
+                    False, "white"
+                )
 
             if msg == "player_death1":
-                return self.msg_font.render(f"You fell in lava!", False, "white")
+                return self.msg_font.render(
+                    f"You fell in lava!",
+                    False, "white"
+                )
 
             if msg == "player_death2":
-                return self.msg_font.render(f"You are caught by monster!", False, "white")
+                return self.msg_font.render(
+                    f"You were caught by monster!",
+                    False, "white"
+                )
 
 
         # append a new not-yet-blitted message
@@ -887,7 +901,7 @@ class Window:
             text = msg_to_text()
             self.msg_surface.blit(
                 text,
-                text.get_rect(top=i * self.GRID_SIZE, centerx=(self.MAP_WIDTH * self.GRID_SIZE)// 2)
+                text.get_rect(top=i * self.GRID_SIZE, centerx=(self.MAP_WIDTH / 2 * self.GRID_SIZE))
             )
 
 
@@ -898,10 +912,8 @@ class Window:
             dt = self.clock.tick(self.fps)
 
         s = self.playground.render_state
-        self.draw_game(s)
-        self.draw_stat(s)
-        self.print_msg(msg, s, dt)
 
+        self.draw_game(s)
         self.win.blit(
             self.game_surface,
             self.game_surface.get_rect(
@@ -909,6 +921,7 @@ class Window:
                 )
             )
 
+        self.draw_stat(s)
         self.win.blit(
             self.stat_surface,
             self.stat_surface.get_rect(
@@ -916,12 +929,14 @@ class Window:
                 )
             )
 
-        self.win.blit(
-            self.msg_surface,
-            self.msg_surface.get_rect(
-                topleft=(0, (self.STAT_HEIGHT + self.MAP_HEIGHT // 2 + 2) * self.GRID_SIZE)
+        if self.fps is not None:
+            self.print_msg(msg, s, dt)
+            self.win.blit(
+                self.msg_surface,
+                self.msg_surface.get_rect(
+                    topleft=(0, (self.STAT_HEIGHT + self.MAP_HEIGHT // 2 + 1.5) * self.GRID_SIZE)
+                    )
                 )
-            )
 
         pygame.display.flip()
 
