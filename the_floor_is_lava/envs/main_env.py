@@ -12,35 +12,6 @@ if "WSL2" in platform():
     environ["SDL_AUDIODRIVER"] = "pulseaudio"
 
 
-keys_to_action = {
-    ('w', '8'): 0, # walk; up
-    ('s', '2'): 1, # walk; down
-    ('a', '4'): 2, # walk; left
-    ('d', '6'): 3, # walk; right
-    ('q', '7'): 4, # walk; up-left
-    ('e', '9'): 5, # walk; up-right
-    ('z', '1'): 6, # walk; down-left
-    ('c', '3'): 7, # walk; down-right
-
-    ('kw', '.8'): 8, # destroy; up
-    ('ks', '.2'): 9, # destroy; down
-    ('ka', '.4'): 10, # destroy; left
-    ('kd', '.6'): 11, # destroy; right
-    ('kq', '.7'): 12, # destroy; up-left
-    ('ke', '.9'): 13, # destroy; up-right
-    ('kz', '.1'): 14, # destroy; down-left
-    ('kc', '.3'): 15, # destroy; down-right
-
-    (' w', '08'): 16, # jump; up
-    (' s', '02'): 17, # jump; down
-    (' a', '04'): 18, # jump; left
-    (' d', '06'): 19, # jump; right
-
-    ('f', '*'): 20, # freezer
-    ('r', '-'): 21, # redbull
-
-}
-
 
 # make coordinates objects for better readability,
 # handles coordinate operations too
@@ -346,26 +317,40 @@ Difficulty = namedtuple(
     ["init_platform_size", "r", "a", "respawn", "freezer_reset", "redbull_reset"]
 )
 
+# action_to_id
+UP = 0
+DOWN = 1
+LEFT = 2
+RIGHT = 3
+UP_LEFT = 4
+UP_RIGHT = 5
+DOWN_LEFT = 6
+DOWN_RIGHT = 7
+DESTROY = 8
+JUMP = 16
+FREEZER = 20
+REDBULL = 21
+
+# sound_to_id
+PLAYER_WALK = 0
+PLAYER_JUMP = 1
+PLAYER_DESTROY = 2
+PLAYER_FREEZER = 3
+FREEZER_RESET = 4
+PLAYER_REDBULL = 5
+REDBULL_RESET = 6
+PLAYER_DIE = 7
+MONSTER_ATTACK = 8
+MONSTER_RESPAWN = 9
+
+# death_msg_to_id
+FELL_IN_LAVA = 0
+WALK_TO_MONSTER = 1
+CAUGHT_BY_MONSTER = 2
+
 
 class Playground:
-    
-    # 0: Easy (very easy)
-    # 1: Normal (current)
-    # 2: Hard (very difficult, may require tools at start or even consecutively)
-    pygame.mixer.init()
-    sounds = {
-        "player_walk": pygame.mixer.Sound("assets/footstep.wav"),
-        "player_jump": pygame.mixer.Sound("assets/footstep.wav"),
-        "player_destroy": pygame.mixer.Sound("assets/destroy.wav"),
-        "player_freezer": pygame.mixer.Sound("assets/freezer.flac"),
-        "freezer_reset": pygame.mixer.Sound("assets/freezer_reset.wav"),
-        "player_redbull": pygame.mixer.Sound("assets/redbull.wav"),
-        "redbull_reset": pygame.mixer.Sound("assets/redbull_reset.wav"),
-        "player_die": pygame.mixer.Sound("assets/player_die.wav"),
-        "monster_attack": pygame.mixer.Sound("assets/monster_attack.mp3"),
-        "monster_respawn": pygame.mixer.Sound("assets/monster_respawn.wav"),
-    }
-    
+
     def __init__(self, map_width: int, map_height: int, difficulty: int, seed: int=None):
         # game settings
 
@@ -374,7 +359,7 @@ class Playground:
         self.MAP_WIDTH = map_width
         self.MAP_HEIGHT = map_height
         self.map = Map(self.MAP_WIDTH, self.MAP_HEIGHT)
-        
+
         self._difficulty_to_var = [
             Difficulty(self.MAP_WIDTH // 2 + 3, 0.45, 0.15, 5, 5, 7),
             Difficulty(self.MAP_WIDTH // 2 + 1, 0.4, 0.2, 3, 7, 10),
@@ -384,9 +369,9 @@ class Playground:
         (
             self.init_platform_size, # size of initial platforms at centre
             self.mapgen_r,    # parameters for map generation
-            self.mapgen_a, 
-            self.MONSTER_RESPAWN, 
-            self.freezer_reset, 
+            self.mapgen_a,
+            self.MONSTER_RESPAWN,
+            self.freezer_reset,
             self.redbull_reset
         ) = self._difficulty_to_var[self.difficulty]
 
@@ -434,78 +419,6 @@ class Playground:
                                 )
 
 
-        # pygame.mixer.init()
-        # background music
-            # pygame.mixer.music.load("")
-            # pygame.mixer.music.play(loops=-1) # infinite loop
-
-  
-
-        for s in self.sounds:
-            self.sounds[s].set_volume(0.5)
-
-
-        # to be removed (
-        self._key_to_action = {
-                                'w': 0, # up
-                                's': 1, # down
-                                'a': 2, # left
-                                'd': 3, # right
-                                'q': 4, # up-left
-                                'e': 5, # up-right
-                                'z': 6, # down-left
-                                'c': 7, # down-right
-                                'space': 8, # jump
-                                'f': 9, # freezer
-                                'r': 10, # redbull
-                                'v': 11, # destroy
-                            }
-        self.is_jump = False
-        self.is_destroy = False
-        # )
-
-    # to be removed
-    def key_to_action(self, key: pygame.key) -> None:
-        action = None
-
-        try:
-            key = self._key_to_action[pygame.key.name(key)]
-            if key not in range(0, 12):
-                raise KeyError
-
-            if key == 8:
-                self.is_jump = True
-                self.is_destroy = False
-
-            elif key == 9:
-                action = 20 # freezer
-                self.is_jump = False
-                self.is_destroy = False
-
-            elif key == 10:
-                action = 21 # redbull
-                self.is_jump = False
-                self.is_destroy = False
-
-            elif key == 11:
-                self.is_jump = False
-                self.is_destroy = True
-
-            else:
-                if self.is_jump and key in range(0, 4):
-                    action = 16 + key # jump + dir
-                    self.is_jump = False
-                elif self.is_destroy:
-                    action = 8 + key # destroy + dir
-                    self.is_destroy = False
-                elif not self.is_jump and not self.is_destroy:
-                    action = key # walk + dir
-
-        except KeyError:
-            return
-
-        return action
-
     @property
     def is_player_alive(self) -> bool:
         return self.player.is_alive(self.map) and \
@@ -519,48 +432,41 @@ class Playground:
     def map_exhausted(self) -> bool:
         return (len(self.map.grids) - self.player.location.y) <= self.map.MAP_HEIGHT // 2
 
-    def play(self, action: int) -> tuple[Status, str]:
+    def play(self, action: int) -> tuple[Status, list[str], str]:
+        sound_queue = []
+
         # player action
         used_freezer = False
         used_redbull = False
 
-        # 0-7: walk (up down left right up-left up-right down-left down-right)
-        # 8-15: destroy
-        # 16-19: jump (up down left right)
-        # 20: freezer, 21: redbull
-
-        if action in range(0, 7+1):
+        if action in {UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT}:
             s = self.player.walk(self._action_to_direction[action], self.map)
             if not s == INVALID_STATUS:
-                self.sounds["player_walk"].play()
+                sound_queue.append(PLAYER_WALK)
 
-        elif action in range(8, 15+1):
+        elif action in {DESTROY+UP, DESTROY+DOWN, DESTROY+LEFT, DESTROY+RIGHT, DESTROY+UP_LEFT, DESTROY+UP_RIGHT, DESTROY+DOWN_LEFT, DESTROY+DOWN_RIGHT}:
             s = self.player.destroy(self._action_to_direction[action-8], self.map)
             if not s == INVALID_STATUS:
-                self.sounds["player_destroy"].play()
+                sound_queue.append(PLAYER_DESTROY)
 
-        elif action in range(16, 19+1):
+        elif action in {JUMP+UP, JUMP+DOWN, JUMP+LEFT, JUMP+RIGHT}:
             s = self.player.jump(self._action_to_direction[action-16], self.map)
             if not s == INVALID_STATUS:
-                self.sounds["player_jump"].play()
+                sound_queue.append(PLAYER_JUMP)
 
-        elif action == 20:
+        elif action == FREEZER:
             s = self.player.freezer(self.map)
             if not s == INVALID_STATUS:
                 used_freezer = True
-                self.sounds["player_freezer"].play()
-            else:
-                return s, "freezer_reset"
+                sound_queue.append(PLAYER_FREEZER)
 
-        elif action == 21:
+        elif action == REDBULL:
             s = self.player.redbull(self.map)
             if not s == INVALID_STATUS:
                 self.monster.location = OFF_SCREEN
                 self.monster_respawn_cooldown = 1 # immediate monster respawn
                 used_redbull = True
-                self.sounds["player_redbull"].play()
-            else:
-                return s, "redbull_reset"
+                sound_queue.append(PLAYER_REDBULL)
 
         else:
             raise ValueError("Unknown Action")
@@ -584,18 +490,21 @@ class Playground:
         if not used_freezer and self.player.freezer_cooldown > 0:
             self.player.freezer_cooldown -= 1
             if self.player.freezer_cooldown == 0:
-                self.sounds["freezer_reset"].play()
+                sound_queue.append(FREEZER_RESET)
 
         if not used_redbull and self.player.redbull_cooldown > 0:
             self.player.redbull_cooldown -= 1
             if self.player.redbull_cooldown == 0:
-                self.sounds["redbull_reset"].play()
+                sound_queue.append(REDBULL_RESET)
 
 
         # if player suicided
         if not self.is_player_alive:
-            self.sounds["player_die"].play()
-            return DEAD_STATUS, "player_death1"
+            sound_queue.append(PLAYER_DIE)
+            if not self.player.is_alive(self.map):
+                return DEAD_STATUS, sound_queue, PLAYER_DIE
+            else:
+                return DEAD_STATUS, sound_queue, WALK_TO_MONSTER
 
 
         # decrease monster spawn cooldown
@@ -607,15 +516,15 @@ class Playground:
         if self.monster_respawn_cooldown == 0:
             self.monster_respawn_cooldown = self.MONSTER_RESPAWN
             self.monster.respawn(self.player.location, self.map)
-            self.sounds["monster_respawn"].play()
+            sound_queue.append(MONSTER_RESPAWN)
 
         elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # monster already spawned
             self.monster.step(self.player.location, self.map)
 
         # if player is caught by monster
         if not self.is_player_alive:
-            self.sounds["monster_attack"].play()
-            return DEAD_STATUS, "player_death2"
+            sound_queue.append(MONSTER_ATTACK)
+            return DEAD_STATUS, sound_queue, CAUGHT_BY_MONSTER
 
         # update player's score
         self.score += s.score
@@ -624,10 +533,7 @@ class Playground:
         if self.player.location.y - self.monster.location.y > round(self.map.MAP_HEIGHT * 0.7) :
             self.monster.location = OFF_SCREEN
 
-        if not self.monster.is_alive(self.map):
-            return s, "monster_respawn"
-
-        return s, None
+        return s, sound_queue, None
 
 
     def _get_slice(self) -> list[list[int]]:
@@ -724,7 +630,7 @@ class Window:
         self.platform_lip_image = pygame.image.load("assets/platform_lip.png").convert_alpha()
         self.player_image = pygame.image.load("assets/player.png").convert_alpha()
         self.monster_image = pygame.image.load("assets/monster.png").convert_alpha()
-        
+
         self.stat_image = pygame.image.load("assets/stat.png").convert()
         self.freezer_image = pygame.image.load("assets/freezer.png").convert_alpha()
         self.freezer_bw_image = pygame.image.load("assets/freezer_bw.png").convert_alpha()
@@ -735,7 +641,7 @@ class Window:
         pygame.font.init()
         self.font = pygame.font.Font('assets/font.ttf', 16)
         self.font.set_bold(True)
-        
+
         self.score_font = pygame.font.Font('assets/font.ttf', 24)
         self.msg_font = pygame.font.Font('assets/font.ttf', 14)
         self.msg_font.set_bold(True)
@@ -813,34 +719,34 @@ class Window:
         rect.height *= 0.8  # remove extra space below text
         rect.bottomleft = (img_topleft[0], img_topleft[1]+img_height)
         return rect
-    
+
     # drawing statistics bar on top
     def _draw_stat(self, s: RenderState) -> None:
         self.stat_surface.blit(self.stat_image, (0,0))
-    
+
         # draw score
         score_surface = self.score_font.render(f"{s.score:>4}", True, (255, 255, 0))
         score_loc = (3.1*self.GRID_SIZE, 0.74*self.GRID_SIZE)
         self.stat_surface.blit(score_surface, score_loc)
-        
-        
+
+
         # draw freezer & redbull
         freezer_loc = (5.47*self.GRID_SIZE, 0.5*self.GRID_SIZE)
         redbull_loc = (freezer_loc[0] + 2*self.GRID_SIZE, freezer_loc[1])
-    
+
         if s.freezer == 0:
             self.stat_surface.blit(self.freezer_image, freezer_loc)
         else:
             self.stat_surface.blit(self.freezer_bw_image, freezer_loc)
-            
+
             fcool_text = self.font.render(f"{s.freezer}", True, (255, 255, 0))
             fcool_rect = self._align_text(fcool_text, freezer_loc, self.freezer_image.get_height())
-            
+
             # translucent black background for better text visibility
             fcool_bg = pygame.Surface(fcool_rect.size)
             fcool_bg.set_alpha(150)
             fcool_bg.fill((0,0,0))
-            
+
             self.stat_surface.blit(fcool_bg, fcool_rect.topleft)
             self.stat_surface.blit(fcool_text, fcool_rect.topleft)
 
@@ -849,102 +755,54 @@ class Window:
             self.stat_surface.blit(self.redbull_image, redbull_loc)
         else:
             self.stat_surface.blit(self.redbull_bw_image, redbull_loc)
-            
+
             rcool_text = self.font.render(f"{s.redbull}", True, (255, 255, 0))
             rcool_rect = self._align_text(rcool_text, redbull_loc, self.redbull_image.get_height())
-            
+
             rcool_bg = pygame.Surface(rcool_rect.size)
             rcool_bg.set_alpha(150)
             rcool_bg.fill((0,0,0))
-            
+
             self.stat_surface.blit(rcool_bg, rcool_rect.topleft)
             self.stat_surface.blit(rcool_text, rcool_rect.topleft)
 
 
     # show game messages on screen, if any
-    def print_msg(self, msg: str, s: RenderState, dt: int) -> None:
+    def print_msg(self, msg: str) -> None:
 
         # turn game message into text shown on screen
         def msg_to_text() -> pygame.font.Font:
-            if msg == "freezer_reset":
-                return self.msg_font.render(
-                    f"Freezer resets in {s.freezer} {'steps' if s.freezer > 1 else 'step'}",
-                    False, "white"
-                )
-
-            if msg == "redbull_reset":
-                return self.msg_font.render(
-                    f"Redbull resets in {s.redbull} {'steps' if s.redbull > 1 else 'step'}",
-                    False, "white"
-                )
-
-            if msg == "monster_respawn":
-                return self.msg_font.render(
-                    f"Monster respawns in {s.monster_respawn} {'steps' if s.monster_respawn > 1 else 'step'}",
-                    False, "white"
-                )
-
-            if msg == "player_death1":
+            if msg == PLAYER_DIE:
                 return self.msg_font.render(
                     f"You fell in lava!",
                     False, "white"
                 )
 
-            if msg == "player_death2":
+            if msg == WALK_TO_MONSTER:
+                return self.msg_font.render(
+                    f"You walked to the monster!",
+                    False, "white"
+                )
+
+            if msg == CAUGHT_BY_MONSTER:
                 return self.msg_font.render(
                     f"You were caught by monster!",
                     False, "white"
                 )
 
-
-        # append a new not-yet-blitted message
-        if msg is not None and msg not in self._msg_queue:
-            if msg == "player_death1" or msg == "player_death2":
-                self._msg_queue.clear()
-
-            self._msg_queue.append(msg)
-
-
-        # remove the relevant message if:
-        # monster has already respawned
-        if "monster_respawn" in self._msg_queue and msg != "monster_respawn" and not s.monster_loc == OFF_SCREEN:
-            self._msg_countdown["monster_respawn"]["countdown"] = self._msg_countdown["monster_respawn"]["DURATION"]
-            self._msg_queue.remove("monster_respawn")
-
-        # freezer already reset
-        if "freezer_reset" in self._msg_queue and s.freezer == 0:
-            self._msg_countdown["freezer_reset"]["countdown"] = self._msg_countdown["freezer_reset"]["DURATION"]
-            self._msg_queue.remove("freezer_reset")
-
-        # redbull already reset
-        if "redbull_reset" in self._msg_queue and s.redbull == 0:
-            self._msg_countdown["redbull_reset"]["countdown"] = self._msg_countdown["redbull_reset"]["DURATION"]
-            self._msg_queue.remove("redbull_reset")
-
-
-        # decrease the countdown of each message, or remove it if countdown is over
-        for msg in self._msg_queue:
-            if self._msg_countdown[msg]["countdown"] > 0:
-                self._msg_countdown[msg]["countdown"] -= dt
-            else:
-                self._msg_countdown[msg]["countdown"] = self._msg_countdown[msg]["DURATION"]
-                self._msg_queue.pop(0)
-
-
         self.msg_surface.fill("gray")
-        for i, msg in enumerate(self._msg_queue):
-            text = msg_to_text()
-            self.msg_surface.blit(
-                text,
-                text.get_rect(top=i * self.GRID_SIZE, centerx=(self.MAP_WIDTH / 2 * self.GRID_SIZE))
-            )
+        text = msg_to_text()
+        self.msg_surface.blit(
+            text,
+            text.get_rect(top=self.GRID_SIZE, centerx=(self.MAP_WIDTH / 2 * self.GRID_SIZE))
+        )
 
 
     # call this method for rendering
     def draw(self, msg: str = None) -> None:
 
         if self.fps is not None:
-            dt = self.clock.tick(self.fps)
+            self.clock.tick(self.fps)
 
         s = self.playground.render_state
 
@@ -964,8 +822,8 @@ class Window:
                 )
             )
 
-        if self.fps is not None:
-            self.print_msg(msg, s, dt)
+        if msg is not None:
+            self.print_msg(msg)
             self.win.blit(
                 self.msg_surface,
                 self.msg_surface.get_rect(
@@ -1025,7 +883,7 @@ class MainEnv(gym.Env):
     def step(self, action) -> tuple:
 
         self.step_count += 1
-        status, game_msg = self.playground.play(action)
+        status = self.playground.play(action)[0]
 
         observation = self.playground.rl_state()
 
@@ -1042,7 +900,7 @@ class MainEnv(gym.Env):
             "score": self.playground.score
         }
 
-        self._render_frame(game_msg)
+        self._render_frame()
 
         return observation, reward, terminated, truncated, info
 
@@ -1052,14 +910,11 @@ class MainEnv(gym.Env):
         return None
 
 
-    def _render_frame(self, game_msg: str = None) -> None:
+    def _render_frame(self) -> None:
         if self.render_mode == "human":
-            self.window.draw(game_msg)
+            self.window.draw()
 
 
     def close(self) -> None:
         if self.window is not None:
-            #pygame.mixer.music.stop()
-            pygame.mixer.quit()
-            pygame.display.quit()
             pygame.quit()
