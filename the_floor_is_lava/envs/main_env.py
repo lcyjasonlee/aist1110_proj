@@ -458,7 +458,7 @@ class Playground:
                                 'space': 8, # jump
                                 'f': 9, # freezer
                                 'r': 10, # redbull
-                                'k': 11, # destroy
+                                'v': 11, # destroy
                             }
         self.is_jump = False
         self.is_destroy = False
@@ -624,8 +624,6 @@ class Playground:
         if self.player.location.y - self.monster.location.y > round(self.map.MAP_HEIGHT * 0.7) :
             self.monster.location = OFF_SCREEN
 
-        print(f"Player: {self.player.location.coord(index=False)} | Monster: {self.monster.location.coord(index=False)}")
-
         if not self.monster.is_alive(self.map):
             return s, "monster_respawn"
 
@@ -676,7 +674,7 @@ class Playground:
             score=self.score,
             freezer=self.player.freezer_cooldown,
             redbull=self.player.redbull_cooldown,
-            monster_respawn=self.monster_respawn_cooldown,
+            monster_respawn=self.monster_respawn_cooldown
         )
 
 
@@ -713,7 +711,7 @@ class Window:
         self.GRID_SIZE = pygame.image.load("assets/lava.png").get_height()
         self.STAT_HEIGHT = 2
 
-        self.win_size = (self.MAP_WIDTH * self.GRID_SIZE, (self.MAP_HEIGHT + self.STAT_HEIGHT) * self.GRID_SIZE) # resolution pending
+        self.win_size = (self.MAP_WIDTH * self.GRID_SIZE, (self.MAP_HEIGHT + self.STAT_HEIGHT) * self.GRID_SIZE)
         self.win = pygame.display.set_mode(self.win_size)
 
         self.game_surface = pygame.Surface((self.MAP_WIDTH * self.GRID_SIZE, self.MAP_HEIGHT * self.GRID_SIZE))
@@ -758,7 +756,7 @@ class Window:
 
 
     # draw gameplay area
-    def draw_game(self, s: RenderState) -> None:
+    def _draw_game(self, s: RenderState) -> None:
 
         # draw grids of lava / platform
         for i in range(self.MAP_HEIGHT):
@@ -807,7 +805,6 @@ class Window:
                     )
                 )
 
-
     # put text on bottomleft corner
     # dynamically calculate size & position
     @staticmethod
@@ -818,7 +815,7 @@ class Window:
         return rect
     
     # drawing statistics bar on top
-    def draw_stat(self, s: RenderState) -> None:
+    def _draw_stat(self, s: RenderState) -> None:
         self.stat_surface.blit(self.stat_image, (0,0))
     
         # draw score
@@ -836,7 +833,7 @@ class Window:
         else:
             self.stat_surface.blit(self.freezer_bw_image, freezer_loc)
             
-            fcool_text = self.cooldown_font.render(f"{s.freezer}", True, (255, 255, 0))
+            fcool_text = self.font.render(f"{s.freezer}", True, (255, 255, 0))
             fcool_rect = self._align_text(fcool_text, freezer_loc, self.freezer_image.get_height())
             
             # translucent black background for better text visibility
@@ -853,7 +850,7 @@ class Window:
         else:
             self.stat_surface.blit(self.redbull_bw_image, redbull_loc)
             
-            rcool_text = self.cooldown_font.render(f"{s.redbull}", True, (255, 255, 0))
+            rcool_text = self.font.render(f"{s.redbull}", True, (255, 255, 0))
             rcool_rect = self._align_text(rcool_text, redbull_loc, self.redbull_image.get_height())
             
             rcool_bg = pygame.Surface(rcool_rect.size)
@@ -943,7 +940,7 @@ class Window:
             )
 
 
-    # most of the rendering belongs to here
+    # call this method for rendering
     def draw(self, msg: str = None) -> None:
 
         if self.fps is not None:
@@ -951,7 +948,7 @@ class Window:
 
         s = self.playground.render_state
 
-        self.draw_game(s)
+        self._draw_game(s)
         self.win.blit(
             self.game_surface,
             self.game_surface.get_rect(
@@ -959,7 +956,7 @@ class Window:
                 )
             )
 
-        self.draw_stat(s)
+        self._draw_stat(s)
         self.win.blit(
             self.stat_surface,
             self.stat_surface.get_rect(

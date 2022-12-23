@@ -1,6 +1,30 @@
 Game font: pixelgamefont.tff
 https://www.dafont.com/pixelgamefont.font
 
+
+
+Texture:
+lava:
+https://opengameart.org/content/2-seamless-lava-tiles
+
+platform:
+https://resourcepack.net/faithful-32x32-resource-pack/
+
+characters:
+https://opengameart.org/content/tiny-16-expanded-character-sprites
+
+wood:
+https://opengameart.org/content/tiny-texture-pack-1
+
+freezer icon:
+https://twitter.com/fedellen/status/1073981922135719936
+
+redbull icon:
+https://es.pixilart.com/art/red-bull-0a98b51febc7acd
+
+
+
+Sound:
 step
 https://freesound.org/people/deleted_user_5093904/sounds/268758/
 
