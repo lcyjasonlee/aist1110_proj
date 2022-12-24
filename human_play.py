@@ -1,6 +1,6 @@
 # adds main loop & additional pausing/game over screen
 
-from the_floor_is_lava.envs.main_env import *
+from the_floor_is_lava.envs.the_floor_is_lava import *
 from cmdargs import args
 from keys import Keys
 import pygame
@@ -26,9 +26,12 @@ win = Window(
 )
 
 
-# pause game until keypress detected or quit game
-# return True if continue playing
 def hold() -> bool:
+    '''
+    pause game until keypress detected or quit game,
+    return True if continue playing
+    '''
+
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
@@ -38,6 +41,10 @@ def hold() -> bool:
 
 
 def help_screen(w: Window) -> bool:
+    '''
+    show help screen at game start
+    '''
+
     help_image = pygame.image.load("assets/help.png")
     help_surface = pygame.Surface(w.win.get_size())
 
@@ -68,6 +75,10 @@ def help_screen(w: Window) -> bool:
 
 
 def death_screen(w: Window, events: list) -> bool:
+    '''
+    show end screen after death
+    '''
+
     if Events.CAUGHT_BY_MONSTER in events:
         msg = "you got caught by the monster"
     elif Events.WALK_TO_MONSTER in events:
@@ -122,6 +133,7 @@ def death_screen(w: Window, events: list) -> bool:
     return hold()
 
 
+# sounds during gameplay
 pygame.mixer.init()
 sounds = {
     Events.PLAYER_WALK: pygame.mixer.Sound("assets/footstep.wav"),
@@ -152,27 +164,28 @@ while running:
             running = False
 
         if event.type == pygame.KEYDOWN and event.key in (pygame.K_SLASH, pygame.K_KP_DIVIDE):
-            running = help_screen(win)
+            running = help_screen(win) # helping screen at start
 
         if event.type == pygame.KEYUP:
             Keys.combined_keys_check(event.key)
 
         action = -1
         if event.type == pygame.KEYDOWN:
-            action = Keys.key_to_action(event.key)
+            action = Keys.key_to_action(event.key) # get action from key input
 
         if action != -1:
-            s, playground_events = playground.play(action)
+            s, playground_events = playground.play(action) # perform the action in game
 
     for e in playground_events:
         if e in sounds:
-            sounds[e].play()
+            sounds[e].play() # play sounds, if any
 
     win.draw()
 
     if not playground.is_player_alive:
-        running = death_screen(win, playground_events)
+        running = death_screen(win, playground_events) # show death screen
 
+        # reset game
         playground = Playground(
             map_width=args.mapwidth,
             map_height=args.mapheight,
