@@ -5,6 +5,12 @@ from the_floor_is_lava.envs.main_env import *
 from cmdargs import args
 import pygame
 
+from platform import platform
+from os import environ
+
+if "WSL2" in platform():
+    environ["SDL_AUDIODRIVER"] = "pulseaudio"
+    
 
 playground = Playground(
     map_width=args.mapwidth,
@@ -18,54 +24,84 @@ win = Window(
 )
 
 
-def help_screen(w: Window):
-    help_image = pygame.image.load("assets/help.png")
-    w.win.blit(help_image, (0,0))
-    pygame.display.update()
-
+# pause game until keypress detected or quit game
+def hold():
     running = True
     while running:
         for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
-                running = False
-            elif event.type == pygame.QUIT:
+            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 pygame.quit()
                 exit(0)
+            if event.type == pygame.KEYDOWN:
+                running = False
 
+
+def help_screen(w: Window):
+    help_image = pygame.image.load("assets/help.png")
+    w.direct_draw(help_image, (0,0))
+    hold()
+    
+
+def death_screen(w: Window, events: list):
+    if Events.CAUGHT_BY_MONSTER in events:
+        msg = "you got caught by the monster"
+    elif Events.WALK_TO_MONSTER in events:
+        msg = "the monster doesn't like your hugs"
+    elif Events.FELL_IN_LAVA in events:
+        msg = "you tried swimming in lava"
+    else:
+        return
+    
+    font = pygame.font.Font(w.FONT_FILE, 14)
+    msg_surface = pygame.Surface((w.MAP_WIDTH * w.GRID_SIZE, 4 * w.GRID_SIZE))
+    msg_surface.set_colorkey("gray")
+    msg_surface.fill("gray")
+    
+    text = font.render(msg, False, "white")
+    
+    msg_surface.blit(
+            text,
+            text.get_rect(top=w.GRID_SIZE, centerx=(w.MAP_WIDTH / 2 * w.GRID_SIZE))
+        )
+
+    w.direct_draw(msg_surface, (0, 0.5))
+    hold()
+    
+    
 
 class Keys:
     pygame.key.set_repeat(200) # delay for continuous key presses
 
     _key_to_action_keyboard = {
-        pygame.K_w: UP,
-        pygame.K_s: DOWN,
-        pygame.K_a: LEFT,
-        pygame.K_d: RIGHT,
-        pygame.K_q: UP_LEFT,
-        pygame.K_e: UP_RIGHT,
-        pygame.K_z: DOWN_LEFT,
-        pygame.K_c: DOWN_RIGHT,
+        pygame.K_w: Actions.UP,
+        pygame.K_s: Actions.DOWN,
+        pygame.K_a: Actions.LEFT,
+        pygame.K_d: Actions.RIGHT,
+        pygame.K_q: Actions.UP_LEFT,
+        pygame.K_e: Actions.UP_RIGHT,
+        pygame.K_z: Actions.DOWN_LEFT,
+        pygame.K_c: Actions.DOWN_RIGHT,
 
-        pygame.K_v: DESTROY,
-        pygame.K_SPACE: JUMP,
-        pygame.K_f: FREEZER,
-        pygame.K_r: REDBULL,
+        pygame.K_v: Actions.DESTROY,
+        pygame.K_SPACE: Actions.JUMP,
+        pygame.K_f: Actions.FREEZER,
+        pygame.K_r: Actions.REDBULL,
     }
 
     _key_to_action_numpad = {
-        pygame.K_KP8: UP,
-        pygame.K_KP2: DOWN,
-        pygame.K_KP4: LEFT,
-        pygame.K_KP6: RIGHT,
-        pygame.K_KP7: UP_LEFT,
-        pygame.K_KP9: UP_RIGHT,
-        pygame.K_KP1: DOWN_LEFT,
-        pygame.K_KP3: DOWN_RIGHT,
+        pygame.K_KP8: Actions.UP,
+        pygame.K_KP2: Actions.DOWN,
+        pygame.K_KP4: Actions.LEFT,
+        pygame.K_KP6: Actions.RIGHT,
+        pygame.K_KP7: Actions.UP_LEFT,
+        pygame.K_KP9: Actions.UP_RIGHT,
+        pygame.K_KP1: Actions.DOWN_LEFT,
+        pygame.K_KP3: Actions.DOWN_RIGHT,
 
-        pygame.K_KP_PERIOD: DESTROY,
-        pygame.K_KP0: JUMP,
-        pygame.K_KP_MULTIPLY: FREEZER,
-        pygame.K_KP_MINUS: REDBULL,
+        pygame.K_KP_PERIOD: Actions.DESTROY,
+        pygame.K_KP0: Actions.JUMP,
+        pygame.K_KP_MULTIPLY: Actions.FREEZER,
+        pygame.K_KP_MINUS: Actions.REDBULL,
     }
 
     def __init__(self):
@@ -207,16 +243,16 @@ key = Keys()
 
 pygame.mixer.init()
 sounds = {
-    PLAYER_WALK: pygame.mixer.Sound("assets/footstep.wav"),
-    PLAYER_JUMP: pygame.mixer.Sound("assets/footstep.wav"),
-    PLAYER_DESTROY: pygame.mixer.Sound("assets/destroy.wav"),
-    PLAYER_FREEZER: pygame.mixer.Sound("assets/freezer.flac"),
-    FREEZER_RESET: pygame.mixer.Sound("assets/freezer_reset.wav"),
-    PLAYER_REDBULL: pygame.mixer.Sound("assets/redbull.wav"),
-    REDBULL_RESET: pygame.mixer.Sound("assets/redbull_reset.wav"),
-    PLAYER_DIE: pygame.mixer.Sound("assets/player_die.wav"),
-    MONSTER_ATTACK: pygame.mixer.Sound("assets/monster_attack.mp3"),
-    MONSTER_RESPAWN: pygame.mixer.Sound("assets/monster_respawn.wav"),
+    Events.PLAYER_WALK: pygame.mixer.Sound("assets/footstep.wav"),
+    Events.PLAYER_JUMP: pygame.mixer.Sound("assets/footstep.wav"),
+    Events.PLAYER_DESTROY: pygame.mixer.Sound("assets/destroy.wav"),
+    Events.PLAYER_FREEZER: pygame.mixer.Sound("assets/freezer.flac"),
+    Events.FREEZER_RESET: pygame.mixer.Sound("assets/freezer_reset.wav"),
+    Events.PLAYER_REDBULL: pygame.mixer.Sound("assets/redbull.wav"),
+    Events.REDBULL_RESET: pygame.mixer.Sound("assets/redbull_reset.wav"),
+    Events.PLAYER_DEATH: pygame.mixer.Sound("assets/player_die.wav"),
+    Events.MONSTER_ATTACK: pygame.mixer.Sound("assets/monster_attack.mp3"),
+    Events.MONSTER_RESPAWN: pygame.mixer.Sound("assets/monster_respawn.wav"),
 }
 
 for s in sounds:
@@ -226,13 +262,12 @@ for s in sounds:
 # starting screen
 help_screen(win)
 
-end_msg = None
 
 # main loop of game
 running = True
 while running:
-    sound_queue = []
-
+    playground_events = []
+    
     for event in pygame.event.get():
         if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
             running = False
@@ -246,25 +281,25 @@ while running:
             #action = key.key_to_action2(pygame.key.get_pressed())
 
         if action != -1:
-            s, sound_queue, end_msg = playground.play(action)
-
-    for s in sound_queue:
-        sounds[s].play()
+            s, playground_events = playground.play(action)
+        
+    for e in playground_events:
+        if e in sounds:
+            sounds[e].play()
 
     win.draw()
 
     if not playground.is_player_alive:
-        running = False
+        death_screen(win, playground_events)
+        
+        playground = Playground(
+            map_width=args.mapwidth,
+            map_height=args.mapheight,
+            difficulty=args.difficulty
+        )
 
+        win.playground = playground
+        
 
-# ending screen
-running = True
-while running:
-    win.draw(end_msg)  # to be changed
-
-    # close window only when player quits
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-            running = False
 
 pygame.quit()

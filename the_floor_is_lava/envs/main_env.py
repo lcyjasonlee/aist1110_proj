@@ -5,13 +5,6 @@ from itertools import product
 from functools import reduce
 from collections import namedtuple
 
-from platform import platform
-from os import environ
-
-if "WSL2" in platform():
-    environ["SDL_AUDIODRIVER"] = "pulseaudio"
-
-
 
 # make coordinates objects for better readability,
 # handles coordinate operations too
@@ -169,9 +162,9 @@ class Entity:
                 return Status(True, dir.y * 2)
 
 
-    def is_alive(self, m: map) -> bool:
+    def in_lava(self, m: map) -> bool:
         if not m.out_of_bound(self.location):
-            return not m.is_lava(self.location) # on platform
+            return m.is_lava(self.location) # on platform
         else:
             return False
 
@@ -278,7 +271,7 @@ class Monster(Entity):
 
     def step(self, p: Coordinate, m: Map) -> None:
         # kill if dropped into lava by player
-        if not self.is_alive(m):
+        if self.in_lava(m):
             self.location = OFF_SCREEN
 
         v = p - self.location
@@ -317,7 +310,8 @@ Difficulty = namedtuple(
     ["init_platform_size", "r", "a", "respawn", "freezer_reset", "redbull_reset"]
 )
 
-# action_to_id
+
+# depreciate
 UP = 0
 DOWN = 1
 LEFT = 2
@@ -331,25 +325,72 @@ JUMP = 16
 FREEZER = 20
 REDBULL = 21
 
-# sound_to_id
+
+class Actions:
+    UP = 0
+    DOWN = 1
+    LEFT = 2
+    RIGHT = 3
+    UP_LEFT = 4
+    UP_RIGHT = 5
+    DOWN_LEFT = 6
+    DOWN_RIGHT = 7
+    DESTROY = 8
+    JUMP = 16
+    FREEZER = 20
+    REDBULL = 21
+    
+    WALK_SET = {UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT}
+    
+    JUMP_SET = {JUMP+UP, JUMP+DOWN, JUMP+LEFT, JUMP+RIGHT}
+    
+    DESTROY_SET = {DESTROY+UP, DESTROY+DOWN, DESTROY+LEFT, DESTROY+RIGHT,
+                   DESTROY+UP_LEFT, DESTROY+UP_RIGHT, DESTROY+DOWN_LEFT, DESTROY+DOWN_RIGHT}
+    
+    TOOL_SET = {FREEZER, REDBULL}
+
+
+# depreciate
 PLAYER_WALK = 0
 PLAYER_JUMP = 1
 PLAYER_DESTROY = 2
+
 PLAYER_FREEZER = 3
 FREEZER_RESET = 4
 PLAYER_REDBULL = 5
 REDBULL_RESET = 6
-PLAYER_DIE = 7
-MONSTER_ATTACK = 8
-MONSTER_RESPAWN = 9
 
-# death_msg_to_id
-FELL_IN_LAVA = 0
-WALK_TO_MONSTER = 1
-CAUGHT_BY_MONSTER = 2
+MONSTER_ATTACK = 7
+MONSTER_RESPAWN = 8
+
+PLAYER_DEATH = 9
+FELL_IN_LAVA = 1 + PLAYER_DEATH
+WALK_TO_MONSTER = 2 + PLAYER_DEATH
+CAUGHT_BY_MONSTER = 3 + PLAYER_DEATH
 
 
-class Playground:
+class Events:
+    PLAYER_WALK = 0
+    PLAYER_JUMP = 1
+    PLAYER_DESTROY = 2
+
+    PLAYER_FREEZER = 3
+    FREEZER_RESET = 4
+    PLAYER_REDBULL = 5
+    REDBULL_RESET = 6
+
+    MONSTER_ATTACK = 7
+    MONSTER_RESPAWN = 8
+
+    PLAYER_DEATH = 9
+    FELL_IN_LAVA = 1 + PLAYER_DEATH
+    WALK_TO_MONSTER = 2 + PLAYER_DEATH
+    CAUGHT_BY_MONSTER = 3 + PLAYER_DEATH
+    
+    DEATH_SET = {PLAYER_DEATH, FELL_IN_LAVA, WALK_TO_MONSTER, CAUGHT_BY_MONSTER}
+
+
+class Playground(Actions, Events):
 
     def __init__(self, map_width: int, map_height: int, difficulty: int, seed: int=None):
         # game settings
@@ -407,21 +448,21 @@ class Playground:
         # others
         self.score = 0
 
-        self._action_to_direction = (
-                                    Coordinate(x=0, y=1), # up
-                                    Coordinate(x=0, y=-1), # down
-                                    Coordinate(x=-1, y=0), # left
-                                    Coordinate(x=1, y=0), # right
-                                    Coordinate(x=-1, y=1), # up-left
-                                    Coordinate(x=1, y=1), # up-right
-                                    Coordinate(x=-1, y=-1), # down-left
-                                    Coordinate(x=1, y=-1), # down-right
-                                )
+        self._action_to_direction = {
+            Actions.UP         : Coordinate(x=0, y=1), # up
+            Actions.DOWN       : Coordinate(x=0, y=-1), # down
+            Actions.LEFT       : Coordinate(x=-1, y=0), # left
+            Actions.RIGHT      : Coordinate(x=1, y=0), # right
+            Actions.UP_LEFT    : Coordinate(x=-1, y=1), # up-left
+            Actions.UP_RIGHT   : Coordinate(x=1, y=1), # up-right
+            Actions.DOWN_LEFT  : Coordinate(x=-1, y=-1), # down-left
+            Actions.DOWN_RIGHT : Coordinate(x=1, y=-1), # down-right
+        }
 
 
     @property
     def is_player_alive(self) -> bool:
-        return self.player.is_alive(self.map) and \
+        return not self.player.in_lava(self.map) and \
                not (self.player.location == self.monster.location) # on platform & not caught by monster
 
     @property
@@ -432,41 +473,44 @@ class Playground:
     def map_exhausted(self) -> bool:
         return (len(self.map.grids) - self.player.location.y) <= self.map.MAP_HEIGHT // 2
 
-    def play(self, action: int) -> tuple[Status, list[str], str]:
-        sound_queue = []
+    # carry out actions,
+    # return action status (for handling reward)
+    # and lists of events (for handling sounds & on screen msg)
+    def play(self, action: int) -> tuple[Status, list[str]]:
+        events = []
 
         # player action
         used_freezer = False
         used_redbull = False
 
-        if action in {UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT}:
+        if action in Actions.WALK_SET:
             s = self.player.walk(self._action_to_direction[action], self.map)
             if not s == INVALID_STATUS:
-                sound_queue.append(PLAYER_WALK)
+                events.append(Events.PLAYER_WALK)
 
-        elif action in {DESTROY+UP, DESTROY+DOWN, DESTROY+LEFT, DESTROY+RIGHT, DESTROY+UP_LEFT, DESTROY+UP_RIGHT, DESTROY+DOWN_LEFT, DESTROY+DOWN_RIGHT}:
+        elif action in Actions.DESTROY_SET:
             s = self.player.destroy(self._action_to_direction[action-8], self.map)
             if not s == INVALID_STATUS:
-                sound_queue.append(PLAYER_DESTROY)
+                events.append(Events.PLAYER_DESTROY)
 
-        elif action in {JUMP+UP, JUMP+DOWN, JUMP+LEFT, JUMP+RIGHT}:
+        elif action in Actions.JUMP_SET:
             s = self.player.jump(self._action_to_direction[action-16], self.map)
             if not s == INVALID_STATUS:
-                sound_queue.append(PLAYER_JUMP)
+                events.append(Events.PLAYER_JUMP)
 
-        elif action == FREEZER:
+        elif action == Actions.FREEZER:
             s = self.player.freezer(self.map)
             if not s == INVALID_STATUS:
                 used_freezer = True
-                sound_queue.append(PLAYER_FREEZER)
+                events.append(Events.PLAYER_FREEZER)
 
-        elif action == REDBULL:
+        elif action == Actions.REDBULL:
             s = self.player.redbull(self.map)
             if not s == INVALID_STATUS:
                 self.monster.location = OFF_SCREEN
                 self.monster_respawn_cooldown = 1 # immediate monster respawn
                 used_redbull = True
-                sound_queue.append(PLAYER_REDBULL)
+                events.append(Events.PLAYER_REDBULL)
 
         else:
             raise ValueError("Unknown Action")
@@ -474,7 +518,7 @@ class Playground:
         # ignore no-ops
         # e.g. using tools before cooldown finished
         if s == INVALID_STATUS:
-            return s, None
+            return s, events
 
         # expand map
         while self.map_exhausted:
@@ -490,21 +534,26 @@ class Playground:
         if not used_freezer and self.player.freezer_cooldown > 0:
             self.player.freezer_cooldown -= 1
             if self.player.freezer_cooldown == 0:
-                sound_queue.append(FREEZER_RESET)
+                events.append(Events.FREEZER_RESET)
 
         if not used_redbull and self.player.redbull_cooldown > 0:
             self.player.redbull_cooldown -= 1
             if self.player.redbull_cooldown == 0:
-                sound_queue.append(REDBULL_RESET)
+                events.append(Events.REDBULL_RESET)
 
 
-        # if player suicided
+        # if player suicided:
+        # either by falling into lava or walking to monster
         if not self.is_player_alive:
-            sound_queue.append(PLAYER_DIE)
-            if not self.player.is_alive(self.map):
-                return DEAD_STATUS, sound_queue, PLAYER_DIE
+            events.append(Events.PLAYER_DEATH)
+            
+            if self.player.in_lava(self.map):
+                events.append(Events.FELL_IN_LAVA)
             else:
-                return DEAD_STATUS, sound_queue, WALK_TO_MONSTER
+                events.append(Events.MONSTER_ATTACK)
+                events.append(Events.WALK_TO_MONSTER)
+            
+            return DEAD_STATUS, events
 
 
         # decrease monster spawn cooldown
@@ -516,15 +565,19 @@ class Playground:
         if self.monster_respawn_cooldown == 0:
             self.monster_respawn_cooldown = self.MONSTER_RESPAWN
             self.monster.respawn(self.player.location, self.map)
-            sound_queue.append(MONSTER_RESPAWN)
+            events.append(Events.MONSTER_RESPAWN)
 
         elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # monster already spawned
             self.monster.step(self.player.location, self.map)
 
+
         # if player is caught by monster
         if not self.is_player_alive:
-            sound_queue.append(MONSTER_ATTACK)
-            return DEAD_STATUS, sound_queue, CAUGHT_BY_MONSTER
+            events.append(Events.PLAYER_DEATH)
+            events.append(Events.MONSTER_ATTACK)
+            events.append(Events.CAUGHT_BY_MONSTER)
+            return DEAD_STATUS, events
+        
 
         # update player's score
         self.score += s.score
@@ -533,7 +586,7 @@ class Playground:
         if self.player.location.y - self.monster.location.y > round(self.map.MAP_HEIGHT * 0.7) :
             self.monster.location = OFF_SCREEN
 
-        return s, sound_queue, None
+        return s, events
 
 
     def _get_slice(self) -> list[list[int]]:
@@ -639,11 +692,12 @@ class Window:
 
 
         pygame.font.init()
-        self.font = pygame.font.Font('assets/font.ttf', 16)
+        self.FONT_FILE = 'assets/font.ttf'
+        self.font = pygame.font.Font(self.FONT_FILE, 16)
         self.font.set_bold(True)
 
-        self.score_font = pygame.font.Font('assets/font.ttf', 24)
-        self.msg_font = pygame.font.Font('assets/font.ttf', 14)
+        self.score_font = pygame.font.Font(self.FONT_FILE, 24)
+        self.msg_font = pygame.font.Font(self.FONT_FILE, 14)
         self.msg_font.set_bold(True)
 
 
@@ -767,37 +821,6 @@ class Window:
             self.stat_surface.blit(rcool_text, rcool_rect.topleft)
 
 
-    # show game messages on screen, if any
-    def print_msg(self, msg: str) -> None:
-
-        # turn game message into text shown on screen
-        def msg_to_text() -> pygame.font.Font:
-            if msg == PLAYER_DIE:
-                return self.msg_font.render(
-                    f"You fell in lava!",
-                    False, "white"
-                )
-
-            if msg == WALK_TO_MONSTER:
-                return self.msg_font.render(
-                    f"You walked to the monster!",
-                    False, "white"
-                )
-
-            if msg == CAUGHT_BY_MONSTER:
-                return self.msg_font.render(
-                    f"You were caught by monster!",
-                    False, "white"
-                )
-
-        self.msg_surface.fill("gray")
-        text = msg_to_text()
-        self.msg_surface.blit(
-            text,
-            text.get_rect(top=self.GRID_SIZE, centerx=(self.MAP_WIDTH / 2 * self.GRID_SIZE))
-        )
-
-
     # call this method for rendering
     def draw(self, msg: str = None) -> None:
 
@@ -822,15 +845,22 @@ class Window:
                 )
             )
 
-        if msg is not None:
-            self.print_msg(msg)
-            self.win.blit(
-                self.msg_surface,
-                self.msg_surface.get_rect(
-                    topleft=(0, (self.STAT_HEIGHT + self.MAP_HEIGHT // 2 + 1.5) * self.GRID_SIZE)
-                    )
-                )
-
+        pygame.display.flip()
+        
+    
+    # directly blit a surface to the window,
+    # for external use (extending game capabilities)
+    
+    # auto calculate proportions: 
+    # (0,0)=topleft of screen, (1,1) = bottomright
+    def direct_draw(self, surface: pygame.Surface, topleft_ratio: tuple[int, int] = (0,0)):
+        self.win.blit(
+            surface, 
+            (
+                topleft_ratio[0]*self.MAP_WIDTH*self.GRID_SIZE,
+                topleft_ratio[1]*self.MAP_HEIGHT*self.GRID_SIZE
+            )
+        )
         pygame.display.flip()
 
 
@@ -854,10 +884,11 @@ class MainEnv(gym.Env):
         self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty)
 
         # objects for rendering
-        self.fps = fps
-        self.window = Window(self.playground, self.fps)
-
         self.render_mode = render_mode
+        if render_mode == "human":
+            self.fps = fps
+            self.window = Window(self.playground, self.fps)
+
         self.trunc = trunc  # truncate after $(trunc) steps
         self.step_count = 0 # no. of steps taken, including invalid ones
 
@@ -867,11 +898,13 @@ class MainEnv(gym.Env):
 
         self.step_count = 0
         self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty)
-        self.window = Window(self.playground, self.fps)
+        
+        if self.render_mode == "human":
+            self.window = Window(self.playground, self.fps)
 
         observation = self.playground.rl_state()
         info = {
-            "step_count": self.step_count,
+            "step_count": 0,
             "score": 0
         }
 
