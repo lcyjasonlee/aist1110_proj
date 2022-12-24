@@ -7,6 +7,7 @@ import pygame
 
 from platform import platform
 from os import environ
+import keys
 
 if "WSL2" in platform():
     environ["SDL_AUDIODRIVER"] = "pulseaudio"
@@ -41,8 +42,8 @@ def help_screen(w: Window) -> bool:
     help_surface = pygame.Surface(w.win.get_size())
 
     # lava texture in background
-    for row in range(w.win.get_height()):
-        for col in range(w.win.get_width()):
+    for row in range(w.win.get_height() // w.GRID_SIZE):
+        for col in range(w.win.get_width() // w.GRID_SIZE):
             help_surface.blit(
                 w.lava_image,
                 (col*w.GRID_SIZE, row*w.GRID_SIZE)

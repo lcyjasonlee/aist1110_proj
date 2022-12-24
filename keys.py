@@ -76,12 +76,12 @@ class Keys:
 
             elif Keys.keyboard_destroy:
                 if action + Actions.MOD_DESTROY in Actions.DESTROY_SET:
-                    action += Actions.DESTROY
+                    action += Actions.MOD_DESTROY
                 else:
                     return -1
 
             elif Keys.keyboard_jump:
-                if action in Actions.JUMPABLE_SET:
+                if action + Actions.MOD_JUMP in Actions.JUMP_SET:
                     action += Actions.MOD_JUMP
                 else:
                     return -1
@@ -91,7 +91,7 @@ class Keys:
         if key in Keys._key_to_action_numpad:
             action = Keys._key_to_action_numpad[key]
 
-            if action == Actions.MOD_DESTROY:
+            if action == Actions.MOD_MOD_DESTROY:
                 Keys.numpad_destroy = True
                 return -1
 
@@ -106,7 +106,7 @@ class Keys:
                     return -1
 
             elif Keys.numpad_jump:
-                if action in Actions.JUMPABLE_SET:
+                if action + Actions.MOD_JUMP in Actions.JUMP_SET:
                     action += Actions.MOD_JUMP
                 else:
                     return -1
