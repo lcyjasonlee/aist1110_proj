@@ -3,11 +3,11 @@ import argparse
 parser = argparse.ArgumentParser()
 
 # common
-parser.add_argument('-mw', '--mapwidth', type=int, help='Map Width',
+parser.add_argument('-mw', '--mapwidth', type=int, help='Map Width, must be odd',
                     choices=range(9, 20, 2), metavar='[9-19 odd]',
                     default=9)
 
-parser.add_argument('-mh', '--mapheight', type=int, help='Map Height',
+parser.add_argument('-mh', '--mapheight', type=int, help='Map Height, must be odd',
                     choices=range(13, 20, 2), metavar='[13-19 odd]',
                     default=15)
 
