@@ -15,8 +15,8 @@ class Keys:
         pygame.K_z: Actions.DOWN_LEFT,
         pygame.K_c: Actions.DOWN_RIGHT,
 
-        pygame.K_v: Actions.DESTROY,
-        pygame.K_SPACE: Actions.JUMP,
+        pygame.K_v: Actions.MOD_DESTROY,
+        pygame.K_SPACE: Actions.MOD_JUMP,
         pygame.K_f: Actions.FREEZER,
         pygame.K_r: Actions.REDBULL,
     }
@@ -31,8 +31,8 @@ class Keys:
         pygame.K_KP1: Actions.DOWN_LEFT,
         pygame.K_KP3: Actions.DOWN_RIGHT,
 
-        pygame.K_KP_PERIOD: Actions.DESTROY,
-        pygame.K_KP0: Actions.JUMP,
+        pygame.K_KP_PERIOD: Actions.MOD_DESTROY,
+        pygame.K_KP0: Actions.MOD_JUMP,
         pygame.K_KP_MULTIPLY: Actions.FREEZER,
         pygame.K_KP_MINUS: Actions.REDBULL,
     }
@@ -66,23 +66,23 @@ class Keys:
         if key in Keys._key_to_action_keyboard:
             action = Keys._key_to_action_keyboard[key]
 
-            if action == Actions.DESTROY:
+            if action == Actions.MOD_DESTROY:
                 Keys.keyboard_destroy = True
                 return -1
 
-            elif action == Actions.JUMP:
+            elif action == Actions.MOD_JUMP:
                 Keys.keyboard_jump = True
                 return -1
 
             elif Keys.keyboard_destroy:
-                if action + Actions.DESTROY in Actions.DESTROY_SET:
+                if action + Actions.MOD_DESTROY in Actions.DESTROY_SET:
                     action += Actions.DESTROY
                 else:
                     return -1
 
             elif Keys.keyboard_jump:
-                if action + Actions.JUMP in Actions.JUMP_SET:
-                    action += Actions.JUMP
+                if action in Actions.JUMPABLE_SET:
+                    action += Actions.MOD_JUMP
                 else:
                     return -1
 
@@ -91,23 +91,23 @@ class Keys:
         if key in Keys._key_to_action_numpad:
             action = Keys._key_to_action_numpad[key]
 
-            if action == Actions.DESTROY:
+            if action == Actions.MOD_DESTROY:
                 Keys.numpad_destroy = True
                 return -1
 
-            elif action == Actions.JUMP:
+            elif action == Actions.MOD_JUMP:
                 Keys.numpad_jump = True
                 return -1
 
             elif Keys.numpad_destroy:
-                if action + Actions.DESTROY in Actions.DESTROY_SET:
-                    action += Actions.DESTROY
+                if action + Actions.MOD_DESTROY in Actions.DESTROY_SET:
+                    action += Actions.MOD_DESTROY
                 else:
                     return -1
 
             elif Keys.numpad_jump:
-                if action + Actions.JUMP in Actions.JUMP_SET:
-                    action += Actions.JUMP
+                if action in Actions.JUMPABLE_SET:
+                    action += Actions.MOD_JUMP
                 else:
                     return -1
 
