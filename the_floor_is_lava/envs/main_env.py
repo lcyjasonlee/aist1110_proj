@@ -311,21 +311,6 @@ Difficulty = namedtuple(
 )
 
 
-# depreciate
-UP = 0
-DOWN = 1
-LEFT = 2
-RIGHT = 3
-UP_LEFT = 4
-UP_RIGHT = 5
-DOWN_LEFT = 6
-DOWN_RIGHT = 7
-DESTROY = 8
-JUMP = 16
-FREEZER = 20
-REDBULL = 21
-
-
 class Actions:
     UP = 0
     DOWN = 1
@@ -335,38 +320,24 @@ class Actions:
     UP_RIGHT = 5
     DOWN_LEFT = 6
     DOWN_RIGHT = 7
-    DESTROY = 8
-    JUMP = 16
+    
+    # modifiers
+    MOD_DESTROY = 8
+    MOD_JUMP = 16
+    
     FREEZER = 20
     REDBULL = 21
     
     WALK_SET = {UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT}
     
-    JUMP_SET = {JUMP+UP, JUMP+DOWN, JUMP+LEFT, JUMP+RIGHT}
+    JUMP_SET = {MOD_JUMP+UP, MOD_JUMP+DOWN, MOD_JUMP+LEFT, MOD_JUMP+RIGHT}
+    JUMPABLE_SET = {UP, DOWN, LEFT, RIGHT}
     
-    DESTROY_SET = {DESTROY+UP, DESTROY+DOWN, DESTROY+LEFT, DESTROY+RIGHT,
-                   DESTROY+UP_LEFT, DESTROY+UP_RIGHT, DESTROY+DOWN_LEFT, DESTROY+DOWN_RIGHT}
+    DESTROY_SET = {MOD_DESTROY+UP, MOD_DESTROY+DOWN, MOD_DESTROY+LEFT,
+                   MOD_DESTROY+RIGHT, MOD_DESTROY+UP_LEFT, MOD_DESTROY+UP_RIGHT,
+                   MOD_DESTROY+DOWN_LEFT, MOD_DESTROY+DOWN_RIGHT}
     
     TOOL_SET = {FREEZER, REDBULL}
-
-
-# depreciate
-PLAYER_WALK = 0
-PLAYER_JUMP = 1
-PLAYER_DESTROY = 2
-
-PLAYER_FREEZER = 3
-FREEZER_RESET = 4
-PLAYER_REDBULL = 5
-REDBULL_RESET = 6
-
-MONSTER_ATTACK = 7
-MONSTER_RESPAWN = 8
-
-PLAYER_DEATH = 9
-FELL_IN_LAVA = 1 + PLAYER_DEATH
-WALK_TO_MONSTER = 2 + PLAYER_DEATH
-CAUGHT_BY_MONSTER = 3 + PLAYER_DEATH
 
 
 class Events:
@@ -383,9 +354,9 @@ class Events:
     MONSTER_RESPAWN = 8
 
     PLAYER_DEATH = 9
-    FELL_IN_LAVA = 1 + PLAYER_DEATH
-    WALK_TO_MONSTER = 2 + PLAYER_DEATH
-    CAUGHT_BY_MONSTER = 3 + PLAYER_DEATH
+    FELL_IN_LAVA = PLAYER_DEATH + 1
+    WALK_TO_MONSTER = PLAYER_DEATH + 2
+    CAUGHT_BY_MONSTER = PLAYER_DEATH + 3
     
     DEATH_SET = {PLAYER_DEATH, FELL_IN_LAVA, WALK_TO_MONSTER, CAUGHT_BY_MONSTER}
 
@@ -643,12 +614,15 @@ class Playground(Actions, Events):
     @property
     def rl_state(self) -> tuple:
         s = self.render_state
-        return (
-            *s.player_loc.coord(index=False),
-            *s.monster_loc.coord(index=False),
-            s.freezer,
-            s.redbull,
-            *[reduce(lambda a,b: 2*a + b, i) for i in s.slice]
+        return np.array(
+            (
+                *s.player_loc.coord(index=False),
+                *s.monster_loc.coord(index=False),
+                s.freezer,
+                s.redbull,
+                *[reduce(lambda a,b: 2*a + b, i) for i in s.slice]
+            ),
+            dtype=np.float32
         )
 
 
@@ -776,12 +750,13 @@ class Window:
 
     # drawing statistics bar on top
     def _draw_stat(self, s: RenderState) -> None:
-        self.stat_surface.blit(self.stat_image, (0,0))
+        texture_surface = pygame.Surface(self.stat_image.get_size())
+        texture_surface.blit(self.stat_image, (0, 0))
 
         # draw score
         score_surface = self.score_font.render(f"{s.score:>4}", True, (255, 255, 0))
         score_loc = (3.1*self.GRID_SIZE, 0.74*self.GRID_SIZE)
-        self.stat_surface.blit(score_surface, score_loc)
+        texture_surface.blit(score_surface, score_loc)
 
 
         # draw freezer & redbull
@@ -789,9 +764,9 @@ class Window:
         redbull_loc = (freezer_loc[0] + 2*self.GRID_SIZE, freezer_loc[1])
 
         if s.freezer == 0:
-            self.stat_surface.blit(self.freezer_image, freezer_loc)
+            texture_surface.blit(self.freezer_image, freezer_loc)
         else:
-            self.stat_surface.blit(self.freezer_bw_image, freezer_loc)
+            texture_surface.blit(self.freezer_bw_image, freezer_loc)
 
             fcool_text = self.font.render(f"{s.freezer}", True, (255, 255, 0))
             fcool_rect = self._align_text(fcool_text, freezer_loc, self.freezer_image.get_height())
@@ -801,14 +776,14 @@ class Window:
             fcool_bg.set_alpha(150)
             fcool_bg.fill((0,0,0))
 
-            self.stat_surface.blit(fcool_bg, fcool_rect.topleft)
-            self.stat_surface.blit(fcool_text, fcool_rect.topleft)
+            texture_surface.blit(fcool_bg, fcool_rect.topleft)
+            texture_surface.blit(fcool_text, fcool_rect.topleft)
 
 
         if s.redbull == 0:
-            self.stat_surface.blit(self.redbull_image, redbull_loc)
+            texture_surface.blit(self.redbull_image, redbull_loc)
         else:
-            self.stat_surface.blit(self.redbull_bw_image, redbull_loc)
+            texture_surface.blit(self.redbull_bw_image, redbull_loc)
 
             rcool_text = self.font.render(f"{s.redbull}", True, (255, 255, 0))
             rcool_rect = self._align_text(rcool_text, redbull_loc, self.redbull_image.get_height())
@@ -817,8 +792,19 @@ class Window:
             rcool_bg.set_alpha(150)
             rcool_bg.fill((0,0,0))
 
-            self.stat_surface.blit(rcool_bg, rcool_rect.topleft)
-            self.stat_surface.blit(rcool_text, rcool_rect.topleft)
+            texture_surface.blit(rcool_bg, rcool_rect.topleft)
+            texture_surface.blit(rcool_text, rcool_rect.topleft)
+
+
+        # rendering is based on pre-baked texture,
+        # align image to center of stat surface
+        self.stat_surface.fill((35, 23, 9))
+        self.stat_surface.blit(
+            texture_surface,
+            texture_surface.get_rect(
+                midtop=self.stat_surface.get_rect().midtop
+            )
+        )
 
 
     # call this method for rendering
@@ -867,15 +853,19 @@ class Window:
 class MainEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 15}
 
-    def __init__(self, map_width=9, map_height=15, difficulty=1, render_mode=None, fps=None, trunc=300) -> None:
+    def __init__(self, map_width=9, map_height=15, difficulty=1, render_mode=None, fps=None, trunc=None) -> None:
 
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
         # then 15 numbers representing rows
-        self.obs_space = gym.spaces.Box(shape=(6+map_height,))
+        self.observation_space = gym.spaces.Box(
+            shape=(6+map_height,),
+            low=-1,
+            high=max(trunc, 2**map_width)
+        )
 
         # 8 walk, 8 destroy, 4 jump, freezer, redbull
-        self.act_space = gym.spaces.Discrete(22)
+        self.action_space = gym.spaces.Discrete(22)
 
         # actual game
         self.MAP_WIDTH = map_width
@@ -900,9 +890,9 @@ class MainEnv(gym.Env):
         self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty)
         
         if self.render_mode == "human":
-            self.window = Window(self.playground, self.fps)
+            self.window.playground = self.playground
 
-        observation = self.playground.rl_state()
+        observation = self.playground.rl_state
         info = {
             "step_count": 0,
             "score": 0
@@ -918,15 +908,16 @@ class MainEnv(gym.Env):
         self.step_count += 1
         status = self.playground.play(action)[0]
 
-        observation = self.playground.rl_state()
+        observation = self.playground.rl_state
 
         if status.success is False and status.score == 0:
             reward = -1
         else:
             reward = status.score
 
-        terminated = (status.score == -10)
-        truncated = (self.step_count >= self.trunc)
+        terminated = (status == DEAD_STATUS)
+        if self.trunc:
+            truncated = (self.step_count >= self.trunc)
 
         info = {
             "step_count": self.step_count,

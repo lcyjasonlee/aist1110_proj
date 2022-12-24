@@ -1,4 +1,3 @@
-# intercept the playground class,
 # adds main loop & additional pausing/game over screen
 
 from the_floor_is_lava.envs.main_env import *
@@ -15,7 +14,8 @@ if "WSL2" in platform():
 playground = Playground(
     map_width=args.mapwidth,
     map_height=args.mapheight,
-    difficulty=args.difficulty
+    difficulty=args.difficulty,
+    seed=args.seed
 )
 
 win = Window(
@@ -25,24 +25,47 @@ win = Window(
 
 
 # pause game until keypress detected or quit game
-def hold():
-    running = True
-    while running:
+# return True if continue playing
+def hold() -> bool:
+    while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                pygame.quit()
-                exit(0)
+                return False
             if event.type == pygame.KEYDOWN:
-                running = False
+                return True
 
 
-def help_screen(w: Window):
+def help_screen(w: Window) -> bool:
     help_image = pygame.image.load("assets/help.png")
-    w.direct_draw(help_image, (0,0))
-    hold()
+    help_surface = pygame.Surface(w.win.get_size())
+    
+    # lava texture in background
+    for row in range(w.win.get_height()):
+        for col in range(w.win.get_width()):
+            help_surface.blit(
+                w.lava_image,
+                (col*w.GRID_SIZE, row*w.GRID_SIZE)
+            )
+    
+    # darken the lava
+    darken_surface = pygame.Surface(w.win.get_size())
+    darken_surface.set_alpha(160)
+    darken_surface.fill((0,0,0))
+    
+    # place help image in the center
+    help_surface.blit(darken_surface, (0,0))
+    help_surface.blit(
+        help_image, 
+        help_image.get_rect(
+            center=help_surface.get_rect().center
+        )
+    )
+
+    w.direct_draw(help_surface, (0,0))
+    return hold()
     
 
-def death_screen(w: Window, events: list):
+def death_screen(w: Window, events: list) -> bool:
     if Events.CAUGHT_BY_MONSTER in events:
         msg = "you got caught by the monster"
     elif Events.WALK_TO_MONSTER in events:
@@ -52,22 +75,50 @@ def death_screen(w: Window, events: list):
     else:
         return
     
-    font = pygame.font.Font(w.FONT_FILE, 14)
-    msg_surface = pygame.Surface((w.MAP_WIDTH * w.GRID_SIZE, 4 * w.GRID_SIZE))
-    msg_surface.set_colorkey("gray")
-    msg_surface.fill("gray")
     
-    text = font.render(msg, False, "white")
+    surface = pygame.Surface((w.MAP_WIDTH * w.GRID_SIZE, 4 * w.GRID_SIZE))
+    surface.set_colorkey("gray")
+    surface.fill("gray")
     
-    msg_surface.blit(
-            text,
-            text.get_rect(top=w.GRID_SIZE, centerx=(w.MAP_WIDTH / 2 * w.GRID_SIZE))
+    msg_font = pygame.font.Font(w.FONT_FILE, 16)
+    msg_text = msg_font.render(msg, False, "white")
+    
+    gameover_font = pygame.font.Font(w.FONT_FILE, 36)
+    gameover_font.set_bold(True)
+    gameover_text = gameover_font.render("YOU DIED!", False, "yellow")
+    
+    restart_font = pygame.font.Font(w.FONT_FILE, 16)
+    restart_text = restart_font.render("PRESS ANY KEY TO RESTART", False, "green")
+    
+    surface.blit(
+            gameover_text,
+            gameover_text.get_rect(centerx=(surface.get_width() // 2))
+    )
+    
+    surface.blit(
+        msg_text,
+        msg_text.get_rect(
+            centerx=(surface.get_width() // 2),
+            top = (gameover_text.get_height())
         )
-
-    w.direct_draw(msg_surface, (0, 0.5))
-    hold()
+    )
     
+    surface.blit(
+        restart_text,
+        restart_text.get_rect(
+            centerx=(surface.get_width() // 2),
+            top = (gameover_text.get_height() + msg_text.get_height()) * 1.4
+        )
+    )
     
+    bg = pygame.Surface(w.win.get_rect().size)
+    bg.set_alpha(120)
+    bg.fill((0,0,0))
+    
+    w.direct_draw(bg, (0,0))
+    w.direct_draw(surface, (0, 0.5))
+    return hold()
+ 
 
 class Keys:
     pygame.key.set_repeat(200) # delay for continuous key presses
@@ -82,8 +133,8 @@ class Keys:
         pygame.K_z: Actions.DOWN_LEFT,
         pygame.K_c: Actions.DOWN_RIGHT,
 
-        pygame.K_v: Actions.DESTROY,
-        pygame.K_SPACE: Actions.JUMP,
+        pygame.K_v: Actions.MOD_DESTROY,
+        pygame.K_SPACE: Actions.MOD_JUMP,
         pygame.K_f: Actions.FREEZER,
         pygame.K_r: Actions.REDBULL,
     }
@@ -98,8 +149,8 @@ class Keys:
         pygame.K_KP1: Actions.DOWN_LEFT,
         pygame.K_KP3: Actions.DOWN_RIGHT,
 
-        pygame.K_KP_PERIOD: Actions.DESTROY,
-        pygame.K_KP0: Actions.JUMP,
+        pygame.K_KP_PERIOD: Actions.MOD_DESTROY,
+        pygame.K_KP0: Actions.MOD_JUMP,
         pygame.K_KP_MULTIPLY: Actions.FREEZER,
         pygame.K_KP_MINUS: Actions.REDBULL,
     }
@@ -133,23 +184,23 @@ class Keys:
         if key in self._key_to_action_keyboard:
             action = self._key_to_action_keyboard[key]
 
-            if action == DESTROY:
+            if action == Actions.MOD_DESTROY:
                 self._keyboard_destroy = True
                 return -1
 
-            elif action == JUMP:
+            elif action == Actions.MOD_JUMP:
                 self._keyboard_jump = True
                 return -1
 
             elif self._keyboard_destroy:
-                if action in {UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT}:
-                    action += DESTROY
+                if action in Actions.WALK_SET:
+                    action += Actions.MOD_DESTROY
                 else:
                     return -1
 
             elif self._keyboard_jump:
-                if action in {UP, DOWN, LEFT, RIGHT}:
-                    action += JUMP
+                if action in Actions.JUMPABLE_SET:
+                    action += Actions.MOD_JUMP
                 else:
                     return -1
 
@@ -158,23 +209,23 @@ class Keys:
         if key in self._key_to_action_numpad:
             action = self._key_to_action_numpad[key]
 
-            if action == DESTROY:
+            if action == Actions.MOD_DESTROY:
                 self._numpad_destroy = True
                 return -1
 
-            elif action == JUMP:
+            elif action == Actions.MOD_JUMP:
                 self._numpad_jump = True
                 return -1
 
             elif self._numpad_destroy:
-                if action in {UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT}:
-                    action += DESTROY
+                if action in Actions.WALK_SET:
+                    action += Actions.MOD_DESTROY
                 else:
                     return -1
 
             elif self._numpad_jump:
-                if action in {UP, DOWN, LEFT, RIGHT}:
-                    action += JUMP
+                if action in Actions.JUMPABLE_SET:
+                    action += Actions.MOD_JUMP
                 else:
                     return -1
 
@@ -182,25 +233,25 @@ class Keys:
 
 
     def _key_to_direction_keyboard2(self, keys) -> int:
-        if keys[pygame.K_w]: return UP
-        if keys[pygame.K_s]: return DOWN
-        if keys[pygame.K_a]: return LEFT
-        if keys[pygame.K_d]: return RIGHT
-        if keys[pygame.K_q]: return UP_LEFT
-        if keys[pygame.K_e]: return UP_RIGHT
-        if keys[pygame.K_z]: return DOWN_LEFT
-        if keys[pygame.K_c]: return DOWN_RIGHT
+        if keys[pygame.K_w]: return Actions.UP
+        if keys[pygame.K_s]: return Actions.DOWN
+        if keys[pygame.K_a]: return Actions.LEFT
+        if keys[pygame.K_d]: return Actions.RIGHT
+        if keys[pygame.K_q]: return Actions.UP_LEFT
+        if keys[pygame.K_e]: return Actions.UP_RIGHT
+        if keys[pygame.K_z]: return Actions.DOWN_LEFT
+        if keys[pygame.K_c]: return Actions.DOWN_RIGHT
         return -1
 
     def _key_to_direction_numpad2(self, keys) -> int:
-        if keys[pygame.K_KP8]: return UP
-        if keys[pygame.K_KP2]: return DOWN
-        if keys[pygame.K_KP4]: return LEFT
-        if keys[pygame.K_KP6]: return RIGHT
-        if keys[pygame.K_KP7]: return UP_LEFT
-        if keys[pygame.K_KP9]: return UP_RIGHT
-        if keys[pygame.K_KP1]: return DOWN_LEFT
-        if keys[pygame.K_KP3]: return DOWN_RIGHT
+        if keys[pygame.K_KP8]: return Actions.UP
+        if keys[pygame.K_KP2]: return Actions.DOWN
+        if keys[pygame.K_KP4]: return Actions.LEFT
+        if keys[pygame.K_KP6]: return Actions.RIGHT
+        if keys[pygame.K_KP7]: return Actions.UP_LEFT
+        if keys[pygame.K_KP9]: return Actions.UP_RIGHT
+        if keys[pygame.K_KP1]: return Actions.DOWN_LEFT
+        if keys[pygame.K_KP3]: return Actions.DOWN_RIGHT
         return -1
 
     # actually checking all keys pressed down at the moment, but highly unreliable (esp. jumping)
@@ -213,8 +264,8 @@ class Keys:
             else:
                 dir = self._key_to_direction_numpad2(keys)
 
-            if dir in {UP, DOWN, LEFT, RIGHT}:
-                action = JUMP + dir
+            if dir in Actions.JUMPABLE_SET:
+                action = Actions.MOD_JUMP + dir
 
         elif keys[pygame.K_v] or keys[pygame.K_KP_PERIOD]:
             if keys[pygame.K_v]:
@@ -223,13 +274,13 @@ class Keys:
                 dir = self._key_to_direction_numpad2(keys)
 
             if dir != -1:
-                action = DESTROY + dir
+                action = Actions.MOD_DESTROY + dir
 
         elif keys[pygame.K_f] or keys[pygame.K_KP_MULTIPLY]:
-            action = FREEZER
+            action = Actions.FREEZER
 
         elif keys[pygame.K_r] or keys[pygame.K_KP_MINUS]:
-            action = REDBULL
+            action = Actions.REDBULL
 
         else:
             action = self._key_to_direction_keyboard2(keys)
@@ -260,17 +311,19 @@ for s in sounds:
 
 
 # starting screen
-help_screen(win)
-
+running = help_screen(win)
 
 # main loop of game
-running = True
+
 while running:
     playground_events = []
     
     for event in pygame.event.get():
         if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
             running = False
+        
+        if event.type == pygame.KEYDOWN and event.key in (pygame.K_SLASH, pygame.K_KP_DIVIDE):
+            running = help_screen(win)
 
         if event.type == pygame.KEYUP:
             key.combined_keys_check(event.key)
@@ -290,7 +343,7 @@ while running:
     win.draw()
 
     if not playground.is_player_alive:
-        death_screen(win, playground_events)
+        running = death_screen(win, playground_events)
         
         playground = Playground(
             map_width=args.mapwidth,
@@ -299,7 +352,5 @@ while running:
         )
 
         win.playground = playground
-        
-
 
 pygame.quit()
