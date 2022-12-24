@@ -2,6 +2,11 @@ import pygame
 from the_floor_is_lava.envs.main_env import Actions
 
 class Keys:
+    '''
+    handle key input from keyboard and numpad,
+    and return corresponding action ID
+    '''
+
     pygame.init()
     pygame.key.set_repeat(200) # delay for continuous key presses
 
@@ -57,7 +62,6 @@ class Keys:
             Keys.numpad_destroy = False
 
 
-    # checking combined keys in >1 frames, exactly-simutaneous press might fail
     @staticmethod
     def key_to_action(key: pygame.key) -> int:
         if key not in Keys._key_to_action_keyboard and key not in Keys._key_to_action_numpad:
@@ -91,7 +95,7 @@ class Keys:
         if key in Keys._key_to_action_numpad:
             action = Keys._key_to_action_numpad[key]
 
-            if action == Actions.MOD_MOD_DESTROY:
+            if action == Actions.MOD_DESTROY:
                 Keys.numpad_destroy = True
                 return -1
 
