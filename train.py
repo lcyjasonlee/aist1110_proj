@@ -13,8 +13,6 @@ import pandas as pd
 if tf.test.gpu_device_name():
     print("Using GPU")
 
-# tf.keras.utils.disable_interactive_logging()
-
 
 class ReplayMem:
     """
@@ -73,18 +71,17 @@ def network(shape: tuple, lr: float=0.001) -> keras.Sequential:
            
     lr: learning rate for optimizer
     """
-    init = tf.keras.initializers.HeUniform(seed=3636798)
+
     model = keras.Sequential([
         keras.layers.Dense(shape[1], input_shape=shape[:1], 
-                            activation="relu", kernel_initializer=init),
+                            activation="relu", kernel_initializer="he_uniform"),
         *[keras.layers.Dense(i, activation="relu", 
-                                kernel_initializer=init) for i in shape[1:-1]],
-        keras.layers.Dense(shape[-1], kernel_initializer=init)
+                                kernel_initializer="he_uniform") for i in shape[2:-1]],
+        keras.layers.Dense(shape[-1], kernel_initializer="he_uniform")
     ])
     
     # minDQN uses losses.Huber()
-    model.compile(loss=keras.losses.MeanSquaredError(), 
-                        optimizer=keras.optimizers.Adam(learning_rate=lr))
+    model.compile(loss="mse", optimizer=keras.optimizers.Adam(learning_rate=lr))
     
     return model
 
@@ -212,4 +209,4 @@ for i in range(args.episode):
 score_series = pd.Series(scores, name="score")
 score_series.to_csv("train_score.csv", index=False)
 
-pnet.save("the_floor_is_lava_9x15")
+pnet.save(f"the_floor_is_lava_w{args.mapwidth}_h{args.mapheight}_d{args.difficulty}")

@@ -4,7 +4,6 @@ from itertools import product
 from functools import reduce
 from collections import namedtuple
 from .coord import Coordinate
-from random import shuffle
 
 
 OFF_SCREEN = Coordinate(x=-1, y=-1)
@@ -226,11 +225,14 @@ class Player(Entity):
         rng = np.random.default_rng(seed=self.location.coord(index=False))
         x, dy = -1, -1
 
-        feasible_location = list(product(range(m.MAP_WIDTH), range(5, 7+1)))
-        shuffle(feasible_location)
+        targets = list(product(range(m.MAP_WIDTH), range(5, 7+1)))
+        targets = np.array(targets)
+        
+        rng = np.random.default_rng(self.location.coord(index=False))
+        rng.shuffle(targets)
             
-        while feasible_location:
-            x, dy = feasible_location.pop()
+        for loc in targets:
+            x, dy = loc
             if not m.is_lava(Coordinate(x=x, y=self.location.y + dy)):
                 self.location = Coordinate(x=x, y=self.location.y + dy)
                 return Status(True, dy)
@@ -411,6 +413,7 @@ class Playground(Actions, Events):
         self.MAP_HEIGHT = map_height
         self.map = Map(self.MAP_WIDTH, self.MAP_HEIGHT)
         self.seed = seed
+        
 
         self._difficulty_to_var = [
             Difficulty(7, 0.45, 0.15, 5, 5, 7),
