@@ -4,6 +4,7 @@ from itertools import product
 from functools import reduce
 from collections import namedtuple
 from .coord import Coordinate
+from random import shuffle
 
 
 OFF_SCREEN = Coordinate(x=-1, y=-1)
@@ -225,12 +226,16 @@ class Player(Entity):
         rng = np.random.default_rng(seed=self.location.coord(index=False))
         x, dy = -1, -1
 
-        while m.is_lava(Coordinate(x=x, y=self.location.y + dy)) or x < 0: # select a feasible platform
-            x, dy = rng.integers(0, m.MAP_WIDTH-1), rng.integers(5, 7, endpoint=True)
-
-        self.location = Coordinate(x=x, y=self.location.y + dy)
-
-        return Status(True, dy)
+        feasible_location = list(product(range(m.MAP_WIDTH), range(5, 7+1)))
+        shuffle(feasible_location)
+            
+        while feasible_location:
+            x, dy = feasible_location.pop()
+            if not m.is_lava(Coordinate(x=x, y=self.location.y + dy)):
+                self.location = Coordinate(x=x, y=self.location.y + dy)
+                return Status(True, dy)
+        
+        return Status(True, 0)
 
     def reset(self) -> None:
         super().reset()
@@ -671,6 +676,7 @@ class Playground(Actions, Events):
         self.monster.reset()
         if self.difficulty != 0:
             self.monster.respawn(self.player.location, self.map)
+        self.score = 0
 
 class Window:
     """
