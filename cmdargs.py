@@ -29,9 +29,9 @@ parser.add_argument('-r', '--render',
                     help="Render game state to screen",
                     action="store_true")
 
-parser.add_argument('-e', "--episodes", type=int,
-                    help="The number of episodes",
-                    default=1000)
+parser.add_argument('-e', "--episode", type=int, 
+                    help="The number of episodes", 
+                    default=10000)
 
 parser.add_argument('-ms', "--maxstep", type=int,
                     help="The maximum number of steps in an episode",

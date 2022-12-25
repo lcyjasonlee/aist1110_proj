@@ -6,7 +6,7 @@ from .the_floor_is_lava import *
 class MainEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 15}
 
-    def __init__(self, map_width=9, map_height=15, difficulty=1, render_mode=None, fps=None, trunc=None) -> None:
+    def __init__(self, map_width=9, map_height=15, difficulty=1, render_mode=None, fps=None, trunc=0) -> None:
 
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
