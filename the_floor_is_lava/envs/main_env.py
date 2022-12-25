@@ -41,10 +41,7 @@ class MainEnv(gym.Env):
         super().reset(seed=seed)    # reset RNG
 
         self.step_count = 0
-        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty, self.seed)
-
-        if self.render_mode == "human":
-            self.window.playground = self.playground
+        self.playground.reset()
 
         observation = self.playground.rl_state
         info = {

@@ -184,15 +184,6 @@ while running:
 
     if not playground.is_player_alive:
         running = death_screen(win, playground_events) # show death screen
-
-        # reset game
-        playground = Playground(
-            map_width=args.mapwidth,
-            map_height=args.mapheight,
-            difficulty=args.difficulty,
-            seed=args.seed
-        )
-
-        win.playground = playground
+        playground.reset()
 
 pygame.quit()

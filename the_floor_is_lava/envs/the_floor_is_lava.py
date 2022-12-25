@@ -58,6 +58,8 @@ class Map:
 
         self.grids += rows.tolist()
 
+    def reset(self):
+        self.grids = []
 
 
 # score = score given to player
@@ -92,6 +94,7 @@ class Entity:
     )
 
     def __init__(self, start_loc: Coordinate):
+        self.start_loc = start_loc
         self.location = start_loc
 
 
@@ -139,6 +142,8 @@ class Entity:
         else:
             return False
 
+    def reset(self) -> None:
+        self.location = self.start_loc
 
 class Player(Entity):
     '''
@@ -207,7 +212,6 @@ class Player(Entity):
 
         return Status(True, 0)
 
-
     def redbull(self, m: Map) -> Status:
         '''
         teleport player forward 5-7 blocks randomly
@@ -228,6 +232,11 @@ class Player(Entity):
 
         return Status(True, dy)
 
+    def reset(self) -> None:
+        super().reset()
+        self.freezer_cooldown = 0
+        self.redbull_cooldown = 0
+        
 
 class Monster(Entity):
     '''
@@ -373,6 +382,21 @@ class Playground(Actions, Events):
     also returns states for rendering and training
     '''
 
+    # generate starting platform
+    @staticmethod
+    def _map_init(m: Map, size: int, r: float, seed: int) -> None:
+        m.reset()
+        centre = Coordinate(x=m.MAP_WIDTH//2, y=m.MAP_HEIGHT//2)
+        
+        while len(m.grids) < m.MAP_HEIGHT: # fill the starting grids with random platforms
+            m.expand(r=r, a=0, seed=seed)
+
+        # spawn platforms at centre
+        for j in range(centre.y - size//2, centre.y + size//2 + 1):
+            for i in range(centre.x - size//2, centre.x + size//2 + 1):
+                m.grids[j][i] = 1
+    
+    
     def __init__(self, map_width: int, map_height: int, difficulty: int, seed: int=None):
         # game settings
 
@@ -381,6 +405,7 @@ class Playground(Actions, Events):
         self.MAP_WIDTH = map_width
         self.MAP_HEIGHT = map_height
         self.map = Map(self.MAP_WIDTH, self.MAP_HEIGHT)
+        self.seed = seed
 
         self._difficulty_to_var = [
             Difficulty(7, 0.45, 0.15, 5, 5, 7),
@@ -399,18 +424,10 @@ class Playground(Actions, Events):
 
 
         # map generation
-        centre = Coordinate(x=self.MAP_WIDTH//2, y=self.MAP_HEIGHT//2)
-
-        while len(self.map.grids) < self.MAP_HEIGHT: # fill the starting grids with random platforms
-            self.map.expand(r=self.mapgen_r, a=0, seed=seed)
-
-        # spawn platforms at centre
-        for j in range(centre.y - self.init_platform_size//2, centre.y + self.init_platform_size//2 + 1):
-            for i in range(centre.x - self.init_platform_size//2, centre.x + self.init_platform_size//2 + 1):
-                self.map.grids[j][i] = 1
-
+        self._map_init(self.map, self.init_platform_size, self.mapgen_r, seed)
 
         # entity initialization
+        centre = Coordinate(x=self.MAP_WIDTH//2, y=self.MAP_HEIGHT//2)
         self.player = Player(
             coordinate=centre,
             freezer_reset=self.freezer_reset,
@@ -648,6 +665,12 @@ class Playground(Actions, Events):
             dtype=np.float32
         )
 
+    def reset(self) -> None:
+        self._map_init(self.map, self.init_platform_size, self.mapgen_r, self.seed)
+        self.player.reset()
+        self.monster.reset()
+        if self.difficulty != 0:
+            self.monster.respawn(self.player.location, self.map)
 
 class Window:
     """
