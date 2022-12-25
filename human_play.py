@@ -189,7 +189,8 @@ while running:
         playground = Playground(
             map_width=args.mapwidth,
             map_height=args.mapheight,
-            difficulty=args.difficulty
+            difficulty=args.difficulty,
+            seed=args.seed
         )
 
         win.playground = playground

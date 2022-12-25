@@ -6,7 +6,7 @@ from .the_floor_is_lava import *
 class MainEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 15}
 
-    def __init__(self, map_width=9, map_height=15, difficulty=1, render_mode=None, fps=None, trunc=0) -> None:
+    def __init__(self, map_width=9, map_height=15, difficulty=1, render_mode=None, fps=None, trunc=0, seed=None) -> None:
 
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
@@ -24,7 +24,8 @@ class MainEnv(gym.Env):
         self.MAP_WIDTH = map_width
         self.MAP_HEIGHT = map_height
         self.difficulty = difficulty
-        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty)
+        self.seed = seed
+        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty, self.seed)
 
         # objects for rendering
         self.render_mode = render_mode
@@ -40,7 +41,7 @@ class MainEnv(gym.Env):
         super().reset(seed=seed)    # reset RNG
 
         self.step_count = 0
-        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty)
+        self.playground = Playground(self.MAP_WIDTH, self.MAP_HEIGHT, self.difficulty, self.seed)
 
         if self.render_mode == "human":
             self.window.playground = self.playground

@@ -7,14 +7,19 @@ import numpy as np
 import gym
 import the_floor_is_lava
 from cmdargs import args
+import pandas as pd
 
 
 if tf.test.gpu_device_name():
     print("Using GPU")
 
+# tf.keras.utils.disable_interactive_logging()
 
-# stores & retrieve experiences
+
 class ReplayMem:
+    """
+    allows storage & retrieval of experiences
+    """
     def __init__(self, obs_shape: tuple, size: int=1000) -> None:
         self.size = size      # no. of experience stored
         self.counter = 0  # for queue implementation
@@ -57,12 +62,17 @@ class ReplayMem:
         return obs, action, reward, new_obs, done
 
 
-# shape: tuple defining network structure,
-# input -> output from left to right,
-# assume len(shape) >= 3
-# lr: learning rate for optimizer
 def network(shape: tuple, lr: float=0.001) -> keras.Sequential:
+    """
+    create neural network
     
+    parameters:
+    shape: tuple defining network structure
+           input -> output from left to right,
+           assume len(shape) >= 3
+           
+    lr: learning rate for optimizer
+    """
     init = tf.keras.initializers.HeUniform(seed=3636798)
     model = keras.Sequential([
         keras.layers.Dense(shape[1], input_shape=shape[:1], 
@@ -73,24 +83,34 @@ def network(shape: tuple, lr: float=0.001) -> keras.Sequential:
     ])
     
     # minDQN uses losses.Huber()
-    model.compile(loss=tf.keras.losses.MeanSquaredError(), 
-                        optimizer=tf.keras.optimizers.Adam(learning_rate=lr))
+    model.compile(loss=keras.losses.MeanSquaredError(), 
+                        optimizer=keras.optimizers.Adam(learning_rate=lr))
     
     return model
-    
 
-# learn and apply strategy
+
 class Agent:
-    # eps: parameter on epsilon-greedy
-    # in the format (max, min, decay rate)
-    # discount: discount factor in bellman eq
-    # lr: learning rate for updating q value
-    # copy: no. of learnings before copying pnet to tnet
-    # batch: no. of samples taken from rm when learning
-    # a: no. of available actions
+    """
+    learn and apply strategy
+    """
+    
     def __init__(self, pnet: keras.Sequential, tnet: keras.Sequential, rm: ReplayMem, 
                  lr: float=0.7, discount: float=0.999, copy: int=10,
                  batch: int=100, eps: tuple=(1, 0.01, 0.001)) -> None:
+        """   
+        parameters:
+        eps: exploration rate & its decay parameter
+             in the format (max, min, decay rate)
+            
+        discount: discount factor in bellman eq
+        
+        lr: learning rate for updating q value
+        
+        copy: no. of learnings before copying pnet to tnet
+        
+        batch: no. of samples taken from rm when learning
+        """
+        
         self.policy_net = pnet
         self.target_net = tnet
         self.replay_mem = rm
@@ -98,7 +118,6 @@ class Agent:
         
         self.learning_rate = lr
         self.eps_max, self.eps_min, self.eps_decay = eps
-        self.eps = self.eps_max     # decay over time
         self.discount_factor = discount
         self.step_count = 0
         
@@ -151,7 +170,6 @@ class Agent:
             return self.rng.choice(self.action_count)
         else:
             return np.argmax(self.policy_net.predict(obs[np.newaxis,:])[0])
-    
 
 
 env = gym.make(
@@ -170,11 +188,12 @@ network_shape = (oshape[0], oshape[0]*2, qshape*2, qshape)
 
 pnet = network(network_shape)
 tnet = network(network_shape)
-
 agent = Agent(pnet, tnet, ReplayMem(oshape))
 
+scores = np.zeros(args.episode) # for plotting
 
-for _ in range(args.episode):
+
+for i in range(args.episode):
     done = False
     obs, info = env.reset(seed=args.seed)
     while not done:
@@ -186,5 +205,11 @@ for _ in range(args.episode):
         
         agent.learn(obs, action, reward, new_obs, done)
         obs = new_obs
-        
+    
+    scores[i] = info["score"]
+
+
+score_series = pd.Series(scores, name="score")
+score_series.to_csv("train_score.csv", index=False)
+
 pnet.save("the_floor_is_lava_9x15")
