@@ -25,7 +25,7 @@ env = gym.make(
     render_mode="human" if args.render else None, 
     trunc=args.maxstep,
     seed=args.seed,
-    fps=args.fps
+    fps=args.fps if args.render else None
 )
 
 model = tf.keras.models.load_model(args.file)
@@ -45,8 +45,7 @@ for i in range(args.episode):
     
     scores[i] = info["score"]
     
-    if i % 20 == 0:
-        print(f"episode {i} ended with a score of {info['score']}")
+    print(f"episode {i}: score={info['score']}, step={info['step_count']}")
 
 
 score_series = pd.Series(scores, name="score")

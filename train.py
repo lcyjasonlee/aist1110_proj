@@ -8,10 +8,14 @@ import gym
 import the_floor_is_lava
 from cmdargs import args
 import pandas as pd
+# import gc
 
 
 if tf.test.gpu_device_name():
     print("Using GPU")
+
+tf.keras.utils.disable_interactive_logging()
+# tf.config.run_functions_eagerly(False)
 
 
 class ReplayMem:
@@ -24,7 +28,7 @@ class ReplayMem:
         
         self.obs_mem = np.zeros((size, *obs_shape), dtype=np.float32)
         self.action = np.zeros((size,), dtype=np.int32)
-        self.reward_mem = np.zeros((size,), dtype=np.int32)
+        self.reward_mem = np.zeros((size,), dtype=np.float32)
         self.new_obs_mem = np.zeros((size, *obs_shape), dtype=np.float32)
         self.done_mem = np.zeros((size,), dtype=np.bool_)
 
@@ -40,7 +44,7 @@ class ReplayMem:
         self.counter += 1
         
     def sample(self, batch_size: int) -> tuple:
-        if batch_size < self.counter:
+        if batch_size > self.counter:
             raise ValueError("Not Enough Experiences to Sample")
 
         rng = np.random.default_rng()
@@ -93,7 +97,7 @@ class Agent:
     
     def __init__(self, pnet: keras.Sequential, tnet: keras.Sequential, rm: ReplayMem, 
                  lr: float=0.7, discount: float=0.999, copy: int=20,
-                 batch: int=20, eps: tuple=(1, 0.01, 0.0001)) -> None:
+                 batch: int=20, eps: tuple=(1, 0.01, 1e-5)) -> None:
         """   
         parameters:
         eps: exploration rate & its decay parameter
@@ -124,10 +128,13 @@ class Agent:
         self.learn_count = 0
         
         self.rng = np.random.default_rng(seed=args.seed)
+        
+        self.loss_history = []
     
     @property
     def exploration_rate(self) -> float:
         return self.eps_min + (self.eps_max - self.eps_min) * np.exp(-self.eps_decay*self.step_count)
+        
     
     # store experience & update network
     def learn(self, obs, action, reward, new_obs, done) -> None:
@@ -153,7 +160,12 @@ class Agent:
                 (1 - self.learning_rate) * current_q[rows, action_batch] \
                 + self.learning_rate * optimal_q
             
-            self.target_net.fit(obs_batch, current_q)
+            # obs_batch = tf.convert_to_tensor(obs_batch)
+            # current_q = tf.convert_to_tensor(current_q)
+            history = self.policy_net.fit(obs_batch, current_q)
+            self.loss_history.append(np.mean(history.history["loss"]))
+            # gc.collect()
+            # tf.keras.backend.clear_session() 
             
         except ValueError:
             return
@@ -177,14 +189,16 @@ env = gym.make(
     map_width=args.mapwidth,
     map_height=args.mapheight,
     difficulty=args.difficulty, 
-    render_mode="human" if args.render else None, 
+    render_mode="human" if args.render else None,
+    fps=args.fps if args.render else None,
     trunc=args.maxstep
 )
 
 
 oshape = env.observation_space.shape    # (6+15,)
 qshape = env.action_space.n     # 22
-network_shape = (oshape[0], oshape[0] * 3, qshape * 2, qshape)
+# network_shape = (oshape[0], qshape * 3, qshape * 2, qshape)
+network_shape = (oshape[0], oshape[0] * 4, qshape * 3, qshape * 2, qshape)
 
 if args.file:
     pnet = tf.keras.models.load_model(args.file)
@@ -192,11 +206,13 @@ if args.file:
 else:
     pnet = network(network_shape)
     tnet = network(network_shape)
-    
+
+print(pnet.summary())
+
 agent = Agent(pnet, tnet, ReplayMem(oshape))
 
-scores = np.zeros(args.episode) # for plotting
-step_count = np.zeros(args.episode)
+scores = np.zeros(args.episode, dtype=np.int32) # for plotting
+step_count = np.zeros(args.episode, dtype=np.int32)
 
 for i in range(args.episode):
     done = False
@@ -216,7 +232,7 @@ for i in range(args.episode):
     step_count[i] = info["step_count"]
     
     if i % 20 == 0:
-        print(f"episode {i}: score={info['score']}, step={info['step_count']}")
+        print(f"episode {i}: score={info['score']}, step={info['step_count']}, latest loss={agent.loss_history[-1:]}")
 
 
 df = pd.DataFrame(data=
@@ -232,3 +248,6 @@ print(f"Average:  Score={df['score'].mean()}, Step={df['step_count'].mean()}")
 print(f"Total step count: {df['step_count'].sum()}")
 
 pnet.save(f"the_floor_is_lava_w{args.mapwidth}_h{args.mapheight}_d{args.difficulty}")
+
+losses = pd.Series(agent.loss_history, name="loss")
+losses.to_csv("data/train_loss.csv", index=False)

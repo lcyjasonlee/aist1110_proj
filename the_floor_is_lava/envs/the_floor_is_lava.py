@@ -666,7 +666,7 @@ class Playground(Actions, Events):
 
         s = self.render_state
         
-        return np.concatenate(
+        return np.array(
             (
                 *s.player_loc.coord(index=False),
                 *s.monster_loc.coord(index=False),
@@ -676,6 +676,16 @@ class Playground(Actions, Events):
             ),
             dtype=np.float32
         )
+        
+        # return np.concatenate(
+        #     (
+        #         s.player_loc.coord(index=False),
+        #         s.monster_loc.coord(index=False),
+        #         (s.freezer, s.redbull),
+        #         np.array(s.slice).flatten()
+        #     ),
+        #     dtype=np.float32
+        # )
 
     def reset(self) -> None:
         self._map_init(self.map, self.init_platform_size, self.mapgen_r, self.seed)

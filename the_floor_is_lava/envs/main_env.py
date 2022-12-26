@@ -11,11 +11,18 @@ class MainEnv(gym.Env):
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
         # then 15 numbers representing rows
+        # self.observation_space = gym.spaces.Box(
+        #     shape=(6+map_height*map_width,),
+        #     low=-1,
+        #     high=trunc
+        # )
+        
         self.observation_space = gym.spaces.Box(
             shape=(6+map_height,),
             low=-1,
             high=max(trunc, 2**map_width)
         )
+        
 
         # 8 walk, 8 destroy, 4 jump, freezer, redbull
         self.action_space = gym.spaces.Discrete(22)
@@ -60,9 +67,11 @@ class MainEnv(gym.Env):
         status = self.playground.play(action)[0]
 
         observation = self.playground.rl_state
-
+        
         if status.success is False and status.score == 0:
-            reward = -1
+            reward = -2
+        elif status.score == 0:
+            reward = -0.5
         else:
             reward = status.score
 
