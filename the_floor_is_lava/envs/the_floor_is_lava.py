@@ -661,31 +661,20 @@ class Playground(Actions, Events):
         '''
         return 1d vector state specifically for RL algo
         player xy, monster xy, freezer & redbull cooldown,
-        and binary representation of rows
+        and flattened representation of map
         '''
 
         s = self.render_state
         
-        return np.array(
+        return np.concatenate(
             (
-                *s.player_loc.coord(index=False),
-                *s.monster_loc.coord(index=False),
-                s.freezer,
-                s.redbull,
-                *[reduce(lambda a,b: 2*a + b, i) for i in s.slice]
+                s.player_loc.coord(index=False),
+                s.monster_loc.coord(index=False),
+                (s.freezer, s.redbull),
+                np.array(s.slice).flatten()
             ),
             dtype=np.float32
         )
-        
-        # return np.concatenate(
-        #     (
-        #         s.player_loc.coord(index=False),
-        #         s.monster_loc.coord(index=False),
-        #         (s.freezer, s.redbull),
-        #         np.array(s.slice).flatten()
-        #     ),
-        #     dtype=np.float32
-        # )
 
     def reset(self) -> None:
         self._map_init(self.map, self.init_platform_size, self.mapgen_r, self.seed)

@@ -31,7 +31,7 @@ parser.add_argument('-r', '--render',
 
 parser.add_argument('-e', "--episode", type=int, 
                     help="The number of episodes", 
-                    default=5000)
+                    default=1000)
 
 parser.add_argument('-ms', "--maxstep", type=int,
                     help="The maximum number of steps in an episode",

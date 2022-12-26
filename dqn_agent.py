@@ -29,6 +29,7 @@ env = gym.make(
 )
 
 model = tf.keras.models.load_model(args.file)
+print(model.summary())
 
 scores = np.zeros(args.episode)
 

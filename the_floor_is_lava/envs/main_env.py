@@ -10,19 +10,12 @@ class MainEnv(gym.Env):
 
         # 1D vector:
         # player xy, monster xy, freezer&redbull cooldown,
-        # then 15 numbers representing rows
-        # self.observation_space = gym.spaces.Box(
-        #     shape=(6+map_height*map_width,),
-        #     low=-1,
-        #     high=trunc
-        # )
-        
+        # then flattened map slice
         self.observation_space = gym.spaces.Box(
-            shape=(6+map_height,),
+            shape=(6+map_height*map_width,),
             low=-1,
-            high=max(trunc, 2**map_width)
+            high=trunc
         )
-        
 
         # 8 walk, 8 destroy, 4 jump, freezer, redbull
         self.action_space = gym.spaces.Discrete(22)
