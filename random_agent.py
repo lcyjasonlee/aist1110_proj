@@ -19,10 +19,10 @@ scores = np.zeros(args.episode) # for plotting
 
 for i in range(args.episode):
     done = False
-    obs, info = env.reset(seed=args.seed)
+    _, info = env.reset(seed=args.seed)
     while not done:
         action = env.action_space.sample()
-        new_obs, reward, done, truncated, info = env.step(action)
+        _, _, done, truncated, info = env.step(action)
 
         if truncated:
             done = True

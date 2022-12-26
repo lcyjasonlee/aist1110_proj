@@ -4,13 +4,24 @@ import gym
 import the_floor_is_lava
 from cmdargs import args
 import pandas as pd
+import re
 
-# model was trained with settings below
+
+if not args.file:
+    raise ValueError("Path of DQN Model is Required")
+
+# recover settings from file name
+pattern = re.compile(r"the_floor_is_lava_w(\d*)_h(\d*)_d(\d*)")
+match_obj = re.match(pattern, args.file)
+map_width = int(match_obj.group(1))
+map_height = int(match_obj.group(2))
+difficulty = int(match_obj.group(3))
+
 env = gym.make(
     "the_floor_is_lava-v1",
-    map_width=9,
-    map_height=15,
-    difficulty=1, 
+    map_width=map_width,
+    map_height=map_height,
+    difficulty=difficulty, 
     render_mode="human" if args.render else None, 
     trunc=args.maxstep,
     seed=args.seed,
@@ -25,7 +36,8 @@ for i in range(args.episode):
     done = False
     obs, info = env.reset(seed=args.seed)
     while not done:
-        action = np.argmax(model.predict(obs[np.newaxis,:]))
+        prediction = model(obs[np.newaxis,:])[0]
+        action = int(tf.math.argmax(prediction))
         new_obs, reward, done, truncated, info = env.step(action)
 
         if truncated:
@@ -33,7 +45,7 @@ for i in range(args.episode):
     
     scores[i] = info["score"]
     
-    if i % 100 == 0:
+    if i % 20 == 0:
         print(f"episode {i} ended with a score of {info['score']}")
 
 

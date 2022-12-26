@@ -416,6 +416,7 @@ class Playground(Actions, Events):
         
 
         self._difficulty_to_var = [
+            Difficulty(7, 0.45, 0.15, -1, 5, 7),    # peaceful
             Difficulty(7, 0.45, 0.15, 5, 5, 7),
             Difficulty(5, 0.4, 0.2, 3, 7, 10),
             Difficulty(5, 0.3, 0.25, 1, 7, 15),
@@ -444,7 +445,7 @@ class Playground(Actions, Events):
 
         self.monster = Monster()
 
-        if self.difficulty != 0: # Easy: Monster will not spawn at start
+        if self.difficulty > 1: # Easy: Monster will not spawn at start
             self.monster.respawn(self.player.location, self.map)
 
         # after monster died, takes a while until monster respawns
@@ -565,20 +566,22 @@ class Playground(Actions, Events):
 
             return DEAD_STATUS, events
 
+        # only step monster if not peaceful
+        if self.MONSTER_RESPAWN > 0:
+            
+            # decrease monster spawn cooldown
+            if not self.is_monster_spawned: # not yet spawned
+                self.monster_respawn_cooldown -= 1
 
-        # decrease monster spawn cooldown
-        if not self.is_monster_spawned: # not yet spawned
-            self.monster_respawn_cooldown -= 1
+            # monster action: spawn monster or step if already spawned
+            # if monster spawned in this round, don't step it
+            if self.monster_respawn_cooldown == 0:
+                self.monster_respawn_cooldown = self.MONSTER_RESPAWN
+                self.monster.respawn(self.player.location, self.map)
+                events.append(Events.MONSTER_RESPAWN)
 
-        # monster action: spawn monster or step if already spawned
-        # if monster spawned in this round, don't step it
-        if self.monster_respawn_cooldown == 0:
-            self.monster_respawn_cooldown = self.MONSTER_RESPAWN
-            self.monster.respawn(self.player.location, self.map)
-            events.append(Events.MONSTER_RESPAWN)
-
-        elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # monster already spawned
-            self.monster.step(self.player.location, self.map)
+            elif self.monster_respawn_cooldown == self.MONSTER_RESPAWN: # monster already spawned
+                self.monster.step(self.player.location, self.map)
 
 
         # if player is caught by monster
@@ -593,7 +596,7 @@ class Playground(Actions, Events):
         self.score += s.score
 
         # kill monster if it is too far away from player
-        if self.player.location.y - self.monster.location.y > round(self.map.MAP_HEIGHT * 0.7) :
+        if self.player.location.y - self.monster.location.y > self.map.MAP_HEIGHT // 2 :
             self.monster.location = OFF_SCREEN
 
         return s, events
@@ -662,7 +665,8 @@ class Playground(Actions, Events):
         '''
 
         s = self.render_state
-        return np.array(
+        
+        return np.concatenate(
             (
                 *s.player_loc.coord(index=False),
                 *s.monster_loc.coord(index=False),
@@ -677,7 +681,7 @@ class Playground(Actions, Events):
         self._map_init(self.map, self.init_platform_size, self.mapgen_r, self.seed)
         self.player.reset()
         self.monster.reset()
-        if self.difficulty != 0:
+        if self.difficulty > 1:
             self.monster.respawn(self.player.location, self.map)
         self.score = 0
 

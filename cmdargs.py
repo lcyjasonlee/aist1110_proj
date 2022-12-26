@@ -4,17 +4,17 @@ parser = argparse.ArgumentParser()
 
 # common
 parser.add_argument('-mw', '--mapwidth', type=int, help='Map Width, must be odd',
-                    choices=range(9, 20, 2), metavar='[9-19 odd]',
+                    choices=range(9, 19+1, 2), metavar='[9-19 odd]',
                     default=9)
 
 parser.add_argument('-mh', '--mapheight', type=int, help='Map Height, must be odd',
-                    choices=range(13, 20, 2), metavar='[13-19 odd]',
+                    choices=range(13, 19+1, 2), metavar='[13-19 odd]',
                     default=15)
 
 parser.add_argument('-d', '--difficulty', type=int,
                     help='Difficulty of the game, higher=more difficult',
-                    choices=range(3), metavar='[0-2]',
-                    default=1)
+                    choices=range(4), metavar='[0-3]',
+                    default=2)
 
 parser.add_argument('-s', "--seed", type=int,
                     help="The seed for random number generator",
@@ -35,10 +35,13 @@ parser.add_argument('-e', "--episode", type=int,
 
 parser.add_argument('-ms', "--maxstep", type=int,
                     help="The maximum number of steps in an episode",
-                    default=500)
+                    default=100)
 
 parser.add_argument('-f', "--file", type=str,
                     help="The file name of the DQN model",
                     default=None)
 
 args = parser.parse_args()
+
+if __name__ == "__main__":
+    print(args)

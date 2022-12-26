@@ -18,7 +18,7 @@ class ReplayMem:
     """
     allows storage & retrieval of experiences
     """
-    def __init__(self, obs_shape: tuple, size: int=1000) -> None:
+    def __init__(self, obs_shape: tuple, size: int=20000) -> None:
         self.size = size      # no. of experience stored
         self.counter = 0  # for queue implementation
         
@@ -92,8 +92,8 @@ class Agent:
     """
     
     def __init__(self, pnet: keras.Sequential, tnet: keras.Sequential, rm: ReplayMem, 
-                 lr: float=0.7, discount: float=0.999, copy: int=10,
-                 batch: int=100, eps: tuple=(1, 0.01, 0.001)) -> None:
+                 lr: float=0.7, discount: float=0.999, copy: int=20,
+                 batch: int=20, eps: tuple=(1, 0.01, 0.0001)) -> None:
         """   
         parameters:
         eps: exploration rate & its decay parameter
@@ -102,6 +102,7 @@ class Agent:
         discount: discount factor in bellman eq
         
         lr: learning rate for updating q value
+            higher = recent values are more important
         
         copy: no. of learnings before copying pnet to tnet
         
@@ -166,7 +167,9 @@ class Agent:
         if self.rng.random() < self.exploration_rate:
             return self.rng.choice(self.action_count)
         else:
-            return np.argmax(self.policy_net.predict(obs[np.newaxis,:])[0])
+            prediction = self.policy_net(obs[np.newaxis,:])[0]
+            action = tf.math.argmax(prediction)
+            return int(action)
 
 
 env = gym.make(
@@ -179,20 +182,26 @@ env = gym.make(
 )
 
 
-oshape = env.observation_space.shape    # (21,)
+oshape = env.observation_space.shape    # (6+15,)
 qshape = env.action_space.n     # 22
-network_shape = (oshape[0], oshape[0]*2, qshape*2, qshape)
+network_shape = (oshape[0], oshape[0] * 3, qshape * 2, qshape)
 
-pnet = network(network_shape)
-tnet = network(network_shape)
+if args.file:
+    pnet = tf.keras.models.load_model(args.file)
+    tnet = tf.keras.models.load_model(args.file)
+else:
+    pnet = network(network_shape)
+    tnet = network(network_shape)
+    
 agent = Agent(pnet, tnet, ReplayMem(oshape))
 
 scores = np.zeros(args.episode) # for plotting
-
+step_count = np.zeros(args.episode)
 
 for i in range(args.episode):
     done = False
     obs, info = env.reset(seed=args.seed)
+    
     while not done:
         action = agent.step(obs)
         new_obs, reward, done, truncated, info = env.step(action)
@@ -204,9 +213,22 @@ for i in range(args.episode):
         obs = new_obs
     
     scores[i] = info["score"]
+    step_count[i] = info["step_count"]
+    
+    if i % 20 == 0:
+        print(f"episode {i}: score={info['score']}, step={info['step_count']}")
 
 
-score_series = pd.Series(scores, name="score")
-score_series.to_csv("train_score.csv", index=False)
+df = pd.DataFrame(data=
+    {
+        "score": scores,
+        "step_count": step_count
+    }
+)
+df.to_csv("data/train_stat.csv")
+
+
+print(f"Average:  Score={df['score'].mean()}, Step={df['step_count'].mean()}")
+print(f"Total step count: {df['step_count'].sum()}")
 
 pnet.save(f"the_floor_is_lava_w{args.mapwidth}_h{args.mapheight}_d{args.difficulty}")
